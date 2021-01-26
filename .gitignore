@@ -1,0 +1,7 @@
+/target
+.*
+*~
+perf.data
+perf.data.old
+!.keep
+!.gitignore
