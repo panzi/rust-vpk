@@ -5,9 +5,10 @@ use std::io::prelude::*;
 use std::ffi::OsString;
 use std::collections::HashMap;
 
-use crate::vpk::entry::Entry;
+use crate::vpk::entry::{Entry, File};
 use crate::vpk::{Result, Error};
 use crate::vpk;
+use crate::vpk::sort::{Order, sort};
 use crate::vpk::io::*;
 use crate::vpk::util::*;
 
@@ -199,5 +200,60 @@ impl Archive {
         }
 
         return None;
+    }
+
+    pub fn recursive_file_list(&self, order: &Order) -> Vec<(String, &File)> {
+        let mut list = Vec::new();
+        let mut pathbuf = String::new();
+        recursive_file_list(&self.entries, &mut pathbuf, &mut list);
+        sort(&mut list, order);
+
+        list
+    }
+
+    pub fn recursive_file_list_from(&self, paths: &[impl AsRef<str>], order: &Order) -> Result<Vec<(String, &File)>> {
+        let mut list = Vec::new();
+        let mut pathbuf = String::new();
+
+        for path in paths {
+            let path = path.as_ref().trim_matches('/');
+            let entry = self.get(path);
+            match entry {
+                None => {
+                    return Err(Error::NoSuchEntry(path.to_owned()));
+                },
+                Some(Entry::Dir(dir)) => {
+                    pathbuf.clear();
+                    pathbuf.push_str(path.as_ref());
+                    pathbuf.push('/');
+                    recursive_file_list(&dir.children, &mut pathbuf, &mut list);
+
+                },
+                Some(Entry::File(file)) => {
+                    list.push((path.to_owned(), file));
+                }
+            }
+        }
+
+        sort(&mut list, order);
+
+        Ok(list)
+    }
+}
+
+fn recursive_file_list<'a>(entries: &'a HashMap<String, Entry>, pathbuf: &mut String, list: &mut Vec<(String, &'a File)>) {
+    for (name, entry) in entries {
+        let len = pathbuf.len();
+        pathbuf.push_str(name);
+        match entry {
+            Entry::Dir(dir) => {
+                pathbuf.push('/');
+                recursive_file_list(&dir.children, pathbuf, list);
+            },
+            Entry::File(file) => {
+                list.push((pathbuf.clone(), file));
+            }
+        }
+        pathbuf.truncate(len);
     }
 }

@@ -1,8 +1,8 @@
 use clap::{Arg, App, SubCommand};
 use std::io::{self, Write};
-use std::collections::HashSet;
 use std::convert::TryFrom;
-use vpk::list::{Sort, Filter};
+use vpk::list::{Filter};
+use vpk::sort::{parse_order, DEFAULT_ORDER};
 
 pub mod vpk;
 
@@ -41,15 +41,20 @@ fn run() -> vpk::Result<()> {
 
     match matches.subcommand() {
         ("list", Some(args)) => {
-            let sort = if let Some(sort) = args.value_of("sort") {
-                Sort::try_from(sort)?
+            let order = if let Some(order) = args.value_of("sort") {
+                Some(parse_order(order)?)
             } else {
-                Sort::default()
+                None
             };
+            let order = match &order {
+                Some(order) => &order[..],
+                None => &DEFAULT_ORDER[..],
+            };
+
             let human_readable = args.is_present("human-readable");
             let path = args.value_of("archive").unwrap();
             let filter = if let Some(filter) = args.values_of("paths") {
-                let paths: HashSet<String> = filter.map(|name| name.to_owned()).collect();
+                let paths: Vec<String> = filter.map(|name| name.to_owned()).collect();
                 if paths.is_empty() {
                     Filter::None
                 } else {
@@ -61,7 +66,7 @@ fn run() -> vpk::Result<()> {
 
             let archive = vpk::Archive::from_path(&path)?;
 
-            vpk::list(&archive, sort, human_readable, &filter)?;
+            vpk::list(&archive, order, human_readable, &filter)?;
         },
         ("check", Some(args)) => {
             println!("unpack: {:?}", args);

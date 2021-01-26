@@ -4,6 +4,12 @@ pub(crate) mod util;
 pub mod list;
 pub use self::list::list;
 
+pub mod sort;
+pub use self::sort::sort;
+
+pub mod check;
+pub use self::check::check;
+
 pub mod archive;
 pub use self::archive::Archive;
 

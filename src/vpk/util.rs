@@ -46,3 +46,15 @@ pub(super) fn split_path<'a>(path: &'a str) -> PathSplitter<'a> {
         char_iter: path.char_indices(),
     }
 }
+
+pub(super) fn format_size(size: u32) -> String {
+    if size >= 1024 * 1024 * 1024 {
+        format!("{} G", size / (1024 * 1024 * 1024))
+    } else if size >= 1024 * 1024 {
+        format!("{} M", size / (1024 * 1024))
+    } else if size >= 1024 {
+        format!("{} K", size / 1024)
+    } else {
+        format!("{}", size)
+    }
+}

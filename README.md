@@ -12,7 +12,6 @@ TODO
 * unpack
 * pack
 * check
-* better sorting options
 * better help message
 * refactor into lib + cli program?
 * choose license (probably GPLv3 or LGPLv3)
