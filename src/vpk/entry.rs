@@ -14,21 +14,23 @@ pub struct Dir {
     pub children: HashMap<String, Entry>,
 }
 
-pub enum EntryType {
-    File,
-    Dir,
-}
-
 pub enum Entry {
     File(File),
     Dir(Dir),
 }
 
 impl Entry {
-    fn entry_type(&self) -> EntryType {
+    pub fn is_file(&self) -> bool {
         match self {
-            Entry::File(_) => EntryType::File,
-            Entry::Dir(_)  => EntryType::Dir,
+            Entry::File(_) => true,
+            Entry::Dir(_)  => false,
+        }
+    }
+
+    pub fn is_dir(&self) -> bool {
+        match self {
+            Entry::File(_) => false,
+            Entry::Dir(_)  => true,
         }
     }
 }

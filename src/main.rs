@@ -1,6 +1,5 @@
 use clap::{Arg, App, SubCommand};
 use std::io::{self, Write};
-use std::convert::TryFrom;
 use vpk::list::{Filter};
 use vpk::sort::{parse_order, DEFAULT_ORDER};
 
