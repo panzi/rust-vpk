@@ -1,7 +1,7 @@
 use std::io::{Read, BufRead, Write, SeekFrom, Seek};
 
 use crate::vpk;
-use crate::vpk::{Result, Error};
+use crate::vpk::{Result, Error, DIR_INDEX, TERMINATOR};
 
 #[inline]
 pub(super) fn read_u16(file: &mut impl Read) -> Result<u16> {
@@ -19,20 +19,16 @@ pub(super) fn read_u32(file: &mut impl Read) -> Result<u32> {
     Ok((buffer[3] as u32) << 24 | (buffer[2] as u32) << 16 | (buffer[1] as u32) << 8 | buffer[0] as u32)
 }
 
-pub(super) fn read_str(file: &mut impl BufRead) -> Result<String> {
-    let mut buffer = Vec::new();
+pub(super) fn read_str<'a>(file: &mut impl BufRead, mut buffer: &'a mut Vec<u8>) -> Result<&'a str> {
+    buffer.clear();
     file.read_until(0, &mut buffer)?;
 
     match buffer.last() {
-        Some(0) => {
-            buffer.pop();
-        },
-        _ => {
-            return Err(Error::UnexpectedEOF);
-        }
+        Some(0) => { buffer.pop(); }
+        _ => { return Err(Error::UnexpectedEOF); }
     }
 
-    Ok(String::from_utf8(buffer)?)
+    Ok(std::str::from_utf8(buffer)?)
 }
 
 pub(super) fn read_file<R>(file: &mut R, index: usize, data_offset: u32) -> Result<vpk::entry::File>
@@ -40,14 +36,18 @@ where R: Read, R: Seek {
     let crc32         = read_u32(file)?;
     let inline_size   = read_u16(file)?;
     let archive_index = read_u16(file)?;
-    let offset        = read_u32(file)?;
+    let mut offset    = read_u32(file)?;
     let size          = read_u32(file)?;
     let mut preload   = vec![0; inline_size as usize];
     let terminator    = read_u16(file)?;
 
-    if terminator != 0xFFFF {
-        let term_offset = file.seek(SeekFrom::Current(0))? - 1;
-        return Err(Error::IllegalTerminator { terminator, offset: term_offset });
+    if archive_index == DIR_INDEX {
+        offset += data_offset;
+    }
+
+    if terminator != TERMINATOR {
+        let offset = file.seek(SeekFrom::Current(0))? - 1;
+        return Err(Error::IllegalTerminator { terminator, offset });
     }
 
     file.read_exact(&mut preload)?;
@@ -57,7 +57,7 @@ where R: Read, R: Seek {
         crc32,
         inline_size,
         archive_index,
-        offset: offset + data_offset,
+        offset,
         size,
         preload,
     })

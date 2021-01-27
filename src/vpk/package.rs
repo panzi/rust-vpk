@@ -1,24 +1,25 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::fs;
 use std::io;
 use std::io::prelude::*;
-use std::ffi::OsString;
 use std::collections::HashMap;
 
 use crate::vpk::entry::{Entry, File};
-use crate::vpk::{Result, Error};
+use crate::vpk::{Result, Error, DIR_INDEX};
 use crate::vpk;
 use crate::vpk::sort::{Order, sort};
 use crate::vpk::io::*;
 use crate::vpk::util::*;
 
-pub struct Archive {
-    pub path: OsString,
-    pub version: u32,
-    pub data_offset: u32,
-    pub footer_offset: u32,
-    pub footer_size: u32,
-    pub entries: HashMap<String, Entry>,
+pub struct Package {
+    dirpath: PathBuf,
+    prefix: String,
+
+    version: u32,
+    data_offset: u32,
+    footer_offset: u32,
+    footer_size: u32,
+    entries: HashMap<String, Entry>,
 }
 
 fn mkpath<'a>(mut entries: &'a mut HashMap<String, Entry>, dirpath: &str) -> Result<&'a mut HashMap<String, Entry>> {
@@ -44,10 +45,13 @@ fn mkpath<'a>(mut entries: &'a mut HashMap<String, Entry>, dirpath: &str) -> Res
     return Ok(entries);
 }
 
-impl Archive {
+impl Package {
+    /*
     pub fn new(path: impl AsRef<Path>, version: u32) -> Self {
-        Archive {
-            path: path.as_ref().as_os_str().to_owned(),
+        let path = path.as_ref();
+        Package {
+            dir: path.parent().unwrap().to_owned(),
+            name: path.file_name().unwrap().to_owned(),
             version,
             data_offset: 0,
             footer_offset: 0,
@@ -55,13 +59,34 @@ impl Archive {
             entries: HashMap::new(),
         }
     }
+    */
 
-    pub fn from_path(path: impl AsRef<Path>) -> Result<Archive> {
+    pub fn from_path(path: impl AsRef<Path>) -> Result<Package> {
         let mut file = fs::File::open(&path)?;
         Self::from_file(&mut file, path)
     }
 
-    pub fn from_file(file: &mut fs::File, path: impl AsRef<Path>) -> Result<Archive> {
+    pub fn from_file(file: &mut fs::File, path: impl AsRef<Path>) -> Result<Package> {
+        let path = path.as_ref();
+        let dirpath = if let Some(path) = path.parent() {
+            path.to_owned()
+        } else {
+            return Err(Error::Other(format!("could not get parent directory of: {:?}", path)));
+        };
+        let prefix = if let Some(name) = path.file_name() {
+            if let Some(name) = name.to_str() {
+                if let Some(name) = name.strip_suffix("_dir.vpk") {
+                    name.to_owned()
+                } else {
+                    return Err(Error::Other(format!("Filename does not end in \"_dir.vpk\": {:?}", name)));
+                }
+            } else {
+                return Err(Error::Other(format!("Filename contains invalid unicode bytes: {:?}", name)));
+            }
+        } else {
+            return Err(Error::Other(format!("could not get file name of: {:?}", path)));
+        };
+
         let mut file = std::io::BufReader::new(file);
         let mut magic = [0; 4];
         file.read_exact(&mut magic)?;
@@ -106,17 +131,22 @@ impl Archive {
         let data_offset = header_size as u32 + index_size;
 
         let mut entries = HashMap::new();
-        let mut index = 0usize;
+        let mut index   = 0usize;
+
+        // buffer reuse over loops:
+        let mut extbuf  = Vec::new();
+        let mut dirbuf  = Vec::new();
+        let mut namebuf = Vec::new();
 
         loop {
-            let ext = read_str(&mut file)?;
+            let ext = read_str(&mut file, &mut extbuf)?;
 
             if ext.is_empty() {
                 break;
             }
 
             loop {
-                let dirname = read_str(&mut file)?;
+                let dirname = read_str(&mut file, &mut dirbuf)?;
 
                 if dirname.is_empty() {
                     break;
@@ -125,12 +155,13 @@ impl Archive {
                 let children = mkpath(&mut entries, &dirname)?;
 
                 loop {
-                    let mut name = read_str(&mut file)?;
+                    let name = read_str(&mut file, &mut namebuf)?;
 
                     if name.is_empty() {
                         break;
                     }
 
+                    let mut name = name.to_owned();
                     name.push('.');
                     name.push_str(&ext);
 
@@ -138,7 +169,8 @@ impl Archive {
                     index += 1;
 
                     if children.contains_key(&name) {
-                        writeln!(std::io::stderr(), "*** warning: file occured more than once: {:?}", format!("{}/{}", dirname, name))?;
+                        eprintln!("*** warning: file occured more than once: {:?}",
+                            format!("{}/{}.{}", dirname, name, ext));
                     }
 
                     children.insert(name, Entry::File(entry));
@@ -146,14 +178,40 @@ impl Archive {
             }
         }
 
-        Ok(Archive {
-            path: path.as_ref().as_os_str().to_owned(),
+        Ok(Package {
+            dirpath,
+            prefix,
             version,
             data_offset,
             footer_offset,
             footer_size,
             entries,
         })
+    }
+
+    #[inline]
+    pub fn version(&self) -> u32 {
+        self.version
+    }
+
+    #[inline]
+    pub fn data_offset(&self) -> u32 {
+        self.data_offset
+    }
+
+    #[inline]
+    pub fn footer_offset(&self) -> u32 {
+        self.footer_offset
+    }
+
+    #[inline]
+    pub fn footer_size(&self) -> u32 {
+        self.footer_size
+    }
+
+    #[inline]
+    pub fn root(&self) -> &HashMap<String, Entry> {
+        &self.entries
     }
 
     pub fn get<'a>(&'a self, path: &str) -> Option<&'a Entry> {
@@ -175,10 +233,6 @@ impl Archive {
         }
 
         return None;
-    }
-
-    pub fn root(&self) -> &HashMap<String, Entry> {
-        &self.entries
     }
 
     pub fn get_mut<'a>(&'a mut self, path: &str) -> Option<&'a mut Entry> {
@@ -227,7 +281,6 @@ impl Archive {
                     pathbuf.push_str(path.as_ref());
                     pathbuf.push('/');
                     recursive_file_list(&dir.children, &mut pathbuf, &mut list);
-
                 },
                 Some(Entry::File(file)) => {
                     list.push((path.to_owned(), file));
@@ -238,6 +291,18 @@ impl Archive {
         sort(&mut list, order);
 
         Ok(list)
+    }
+
+    pub fn archive_path(&self, archive_index: u16) -> PathBuf {
+        let mut path = self.dirpath.clone();
+        
+        if archive_index == DIR_INDEX {
+            path.push(format!("{}_dir.vpk", self.prefix));
+        } else {
+            path.push(format!("{}_{:03}.vpk", self.prefix, archive_index));
+        }
+
+        path
     }
 }
 

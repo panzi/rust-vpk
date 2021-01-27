@@ -3,13 +3,7 @@ use std::io::Write;
 use crate::vpk;
 use crate::vpk::sort::*;
 use crate::vpk::util::format_size;
-use crate::vpk::{Result};
-
-#[derive(Debug)]
-pub enum Filter {
-    None,
-    Paths(Vec<String>)
-}
+use crate::vpk::{Result, Filter};
 
 fn print_row(row: &Vec<impl AsRef<str>>, lens: &Vec<usize>, right_align: &Vec<bool>) {
     let mut first = true;
@@ -31,13 +25,13 @@ fn print_row(row: &Vec<impl AsRef<str>>, lens: &Vec<usize>, right_align: &Vec<bo
 }
 
 
-pub fn list(archive: &vpk::Archive, order: &Order, human_readable: bool, filter: &Filter) -> Result<()> {
+pub fn list(package: &vpk::Package, order: &Order, human_readable: bool, filter: &Filter) -> Result<()> {
     let files = match filter {
         Filter::None => {
-            archive.recursive_file_list(order)
+            package.recursive_file_list(order)
         },
         Filter::Paths(paths) => {
-            archive.recursive_file_list_from(&paths, order)?
+            package.recursive_file_list_from(&paths, order)?
         }
     };
 

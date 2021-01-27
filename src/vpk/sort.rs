@@ -23,6 +23,7 @@ pub enum SortKey {
 pub type Order = [SortKey];
 
 pub const DEFAULT_ORDER: [SortKey; 1] = [SortKey::Name];
+pub const PHYSICAL_ORDER: [SortKey; 2] = [SortKey::ArchiveIndex, SortKey::Offset];
 
 impl TryFrom<&str> for SortKey {
     type Error = Error;

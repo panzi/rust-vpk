@@ -1,22 +1,66 @@
 use std::collections::HashMap;
 
 pub struct File {
-    pub index: usize,
-    pub crc32: u32,
-    pub inline_size: u16,
-    pub archive_index: u16,
-    pub offset: u32,
-    pub size: u32,
-    pub preload: Vec<u8>,
+    pub(crate) index: usize,
+    pub(crate) crc32: u32,
+    pub(crate) inline_size: u16,
+    pub(crate) archive_index: u16,
+    pub(crate) offset: u32,
+    pub(crate) size: u32,
+    pub(crate) preload: Vec<u8>,
 }
 
 pub struct Dir {
-    pub children: HashMap<String, Entry>,
+    pub(crate) children: HashMap<String, Entry>,
 }
 
 pub enum Entry {
     File(File),
     Dir(Dir),
+}
+
+impl File {
+    #[inline]
+    pub fn index(&self) -> usize {
+        self.index
+    }
+
+    #[inline]
+    pub fn crc32(&self) -> u32 {
+        self.crc32
+    }
+
+    #[inline]
+    pub fn inline_size(&self) -> u16 {
+        self.inline_size
+    }
+
+    #[inline]
+    pub fn archive_index(&self) -> u16 {
+        self.archive_index
+    }
+
+    #[inline]
+    pub fn offset(&self) -> u32 {
+        self.offset
+    }
+
+    #[inline]
+    pub fn size(&self) -> u32 {
+        self.size
+    }
+
+    #[inline]
+    pub fn preload(&self) -> &[u8] {
+        &self.preload
+    }
+}
+
+impl Dir {
+    #[inline]
+    pub fn children(&self) -> &HashMap<String, Entry> {
+        &self.children
+    }
 }
 
 impl Entry {

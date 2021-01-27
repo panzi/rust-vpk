@@ -3,5 +3,6 @@
 *~
 perf.data
 perf.data.old
+/tmp
 !.keep
 !.gitignore
