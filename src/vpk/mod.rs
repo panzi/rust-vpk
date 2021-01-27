@@ -13,6 +13,9 @@ pub use self::check::check;
 pub mod unpack;
 pub use self::unpack::unpack;
 
+pub mod pack;
+pub use self::pack::pack;
+
 pub mod package;
 pub use self::package::Package;
 
@@ -28,6 +31,7 @@ pub const VPK_MAGIC: Magic = [0x34, 0x12, 0xAA, 0x55];
 pub const DIR_INDEX:  u16 = 0x7FFF;
 pub const TERMINATOR: u16 = 0xFFFF;
 pub const BUFFER_SIZE: usize = 8 * 1024;
+pub const DEFAULT_MAX_INLINE_SIZE: u16 = 8 * 1024;
 
 #[derive(Debug)]
 pub enum Error {

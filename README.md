@@ -9,9 +9,11 @@ in Rust instead of C++ (for the fun of it!).
 TODO
 ----
 
-* unpack
-* pack
-* check
-* better help message
-* refactor into lib + cli program?
-* choose license (probably GPLv3 or LGPLv3)
+* [x] list
+* [x] check
+* [x] unpack
+* [ ] pack (and maybe update?)
+* [ ] read-only fuse filesystem?
+* [ ] better help message
+* [ ] refactor into lib + cli program?
+* [ ] choose license (probably GPLv3 or LGPLv3)

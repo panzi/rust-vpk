@@ -7,13 +7,17 @@ use crate::vpk::entry::{File};
 #[derive(Debug)]
 pub enum SortKey {
     Name,
-    Size,
+    InlineSize,
+    ArchiveSize,
+    FullSize,
     CRC32,
     ArchiveIndex,
     Offset,
     Index,
     RevName,
-    RevSize,
+    RevInlineSize,
+    RevArchiveSize,
+    RevFullSize,
     RevCRC32,
     RevArchiveIndex,
     RevOffset,
@@ -31,8 +35,12 @@ impl TryFrom<&str> for SortKey {
     fn try_from(value: &str) -> Result<SortKey> {
         if value.eq_ignore_ascii_case("name") {
             Ok(SortKey::Name)
-        } else if value.eq_ignore_ascii_case("size") {
-            Ok(SortKey::Size)
+        } else if value.eq_ignore_ascii_case("inline-size") {
+            Ok(SortKey::InlineSize)
+        } else if value.eq_ignore_ascii_case("archive-size") {
+            Ok(SortKey::ArchiveSize)
+        } else if value.eq_ignore_ascii_case("size") || value.eq_ignore_ascii_case("full-size") {
+            Ok(SortKey::FullSize)
         } else if value.eq_ignore_ascii_case("offset") {
             Ok(SortKey::Offset)
         } else if value.eq_ignore_ascii_case("crc32") {
@@ -43,8 +51,12 @@ impl TryFrom<&str> for SortKey {
             Ok(SortKey::Index)
         } else if value.eq_ignore_ascii_case("-name") {
             Ok(SortKey::RevName)
-        } else if value.eq_ignore_ascii_case("-size") {
-            Ok(SortKey::RevSize)
+        } else if value.eq_ignore_ascii_case("-inline-size") {
+            Ok(SortKey::RevInlineSize)
+        } else if value.eq_ignore_ascii_case("-archive-size") {
+            Ok(SortKey::RevArchiveSize)
+        } else if value.eq_ignore_ascii_case("-size") || value.eq_ignore_ascii_case("-full-size") {
+            Ok(SortKey::RevFullSize)
         } else if value.eq_ignore_ascii_case("-offset") {
             Ok(SortKey::RevOffset)
         } else if value.eq_ignore_ascii_case("-crc32") {
@@ -69,14 +81,18 @@ impl SortKey {
     pub fn to_cmp(&self) -> impl Fn(&Item, &Item) -> Ordering {
         match self {
             SortKey::Name            => |a: &Item, b: &Item| { a.0.cmp(&b.0) },
-            SortKey::Size            => |a: &Item, b: &Item| { (a.1.size as usize + a.1.inline_size as usize).cmp(&(b.1.size as usize + b.1.inline_size as usize)) },
+            SortKey::InlineSize      => |a: &Item, b: &Item| { a.1.inline_size.cmp(&(b.1.inline_size)) },
+            SortKey::ArchiveSize     => |a: &Item, b: &Item| { a.1.size.cmp(&(b.1.size)) },
+            SortKey::FullSize        => |a: &Item, b: &Item| { (a.1.size as usize + a.1.inline_size as usize).cmp(&(b.1.size as usize + b.1.inline_size as usize)) },
             SortKey::CRC32           => |a: &Item, b: &Item| { a.1.crc32.cmp(&b.1.crc32) },
             SortKey::ArchiveIndex    => |a: &Item, b: &Item| { a.1.archive_index.cmp(&b.1.archive_index) },
             SortKey::Offset          => |a: &Item, b: &Item| { a.1.offset.cmp(&b.1.offset) },
             SortKey::Index           => |a: &Item, b: &Item| { a.1.index.cmp(&b.1.index) },
 
             SortKey::RevName         => |a: &Item, b: &Item| { b.0.cmp(&a.0) },
-            SortKey::RevSize         => |a: &Item, b: &Item| { (b.1.size as usize + b.1.inline_size as usize).cmp(&(a.1.size as usize + a.1.inline_size as usize)) },
+            SortKey::RevArchiveSize  => |a: &Item, b: &Item| { b.1.size.cmp(&(a.1.size)) },
+            SortKey::RevInlineSize   => |a: &Item, b: &Item| { b.1.inline_size.cmp(&(a.1.inline_size)) },
+            SortKey::RevFullSize     => |a: &Item, b: &Item| { (b.1.size as usize + b.1.inline_size as usize).cmp(&(a.1.size as usize + a.1.inline_size as usize)) },
             SortKey::RevCRC32        => |a: &Item, b: &Item| { b.1.crc32.cmp(&a.1.crc32) },
             SortKey::RevArchiveIndex => |a: &Item, b: &Item| { b.1.archive_index.cmp(&a.1.archive_index) },
             SortKey::RevOffset       => |a: &Item, b: &Item| { b.1.offset.cmp(&a.1.offset) },

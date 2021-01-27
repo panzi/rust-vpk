@@ -3,7 +3,7 @@ use std::io::Write;
 use crate::vpk;
 use crate::vpk::sort::*;
 use crate::vpk::util::format_size;
-use crate::vpk::{Result, Filter};
+use crate::vpk::{Result, Filter, DIR_INDEX};
 
 fn print_row(row: &Vec<impl AsRef<str>>, lens: &Vec<usize>, right_align: &Vec<bool>) {
     let mut first = true;
@@ -41,16 +41,34 @@ pub fn list(package: &vpk::Package, order: &Order, human_readable: bool, filter:
         let size = file.inline_size as u32 + file.size;
         table.push(vec![
             format!("{}", file.index),
-            format!("{}", file.archive_index),
+            if file.archive_index == DIR_INDEX {
+                "dir".to_owned()
+            } else {
+                format!("{}", file.archive_index)
+            },
             format!("{}", file.offset),
-            if human_readable { format_size(size) } else { format!("{}", size) },
+            if human_readable {
+                format_size(file.inline_size as u32)
+            } else {
+                format!("{}", file.inline_size)
+            },
+            if human_readable {
+                format_size(file.size)
+            } else {
+                format!("{}", file.size)
+            },
+            if human_readable {
+                format_size(size)
+            } else {
+                format!("{}", size)
+            },
             format!("0x{:08x}", file.crc32),
             path.to_owned(),
         ]);
     }
 
-    let header = vec!["Index", "Archive", "Offset", "Size", "CRC32", "Filename"];
-    let right_align = vec![true, true, true, true, true, false];
+    let header = vec!["Index", "Archive", "Offset", "Inline-Size", "Archive-Size", "Full-Size", "CRC32", "Filename"];
+    let right_align = vec![true, true, true, true, true, true, true, false];
     // TODO: maybe count graphemes? needs extra lib. haven't seen non-ASCII filenames anyway
     let mut lens: Vec<usize> = header.iter().map(|x| x.chars().count()).collect();
     for row in table.iter() {

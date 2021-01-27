@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::fs;
 use std::io;
-use std::io::prelude::*;
+use std::io::{Read, Seek};
 use std::collections::HashMap;
 
 use crate::vpk::entry::{Entry, File};
@@ -12,14 +12,14 @@ use crate::vpk::io::*;
 use crate::vpk::util::*;
 
 pub struct Package {
-    dirpath: PathBuf,
-    prefix: String,
+    pub(crate) dirpath: PathBuf,
+    pub(crate) prefix: String,
 
-    version: u32,
-    data_offset: u32,
-    footer_offset: u32,
-    footer_size: u32,
-    entries: HashMap<String, Entry>,
+    pub(crate) version: u32,
+    pub(crate) data_offset: u32,
+    pub(crate) footer_offset: u32,
+    pub(crate) footer_size: u32,
+    pub(crate) entries: HashMap<String, Entry>,
 }
 
 fn mkpath<'a>(mut entries: &'a mut HashMap<String, Entry>, dirpath: &str) -> Result<&'a mut HashMap<String, Entry>> {
@@ -45,47 +45,38 @@ fn mkpath<'a>(mut entries: &'a mut HashMap<String, Entry>, dirpath: &str) -> Res
     return Ok(entries);
 }
 
-impl Package {
-    /*
-    pub fn new(path: impl AsRef<Path>, version: u32) -> Self {
-        let path = path.as_ref();
-        Package {
-            dir: path.parent().unwrap().to_owned(),
-            name: path.file_name().unwrap().to_owned(),
-            version,
-            data_offset: 0,
-            footer_offset: 0,
-            footer_size: 0,
-            entries: HashMap::new(),
+pub(crate) fn parse_path(path: impl AsRef<Path>) -> Result<(PathBuf, String)> {
+    let path = path.as_ref();
+    let dirpath = if let Some(path) = path.parent() {
+        path.to_owned()
+    } else {
+        return Err(Error::Other(format!("could not get parent directory of: {:?}", path)));
+    };
+    let prefix = if let Some(name) = path.file_name() {
+        if let Some(name) = name.to_str() {
+            if let Some(name) = name.strip_suffix("_dir.vpk") {
+                name.to_owned()
+            } else {
+                return Err(Error::Other(format!("Filename does not end in \"_dir.vpk\": {:?}", name)));
+            }
+        } else {
+            return Err(Error::Other(format!("Filename contains invalid unicode bytes: {:?}", name)));
         }
-    }
-    */
+    } else {
+        return Err(Error::Other(format!("could not get file name of: {:?}", path)));
+    };
 
+    Ok((dirpath, prefix))
+}
+
+impl Package {
     pub fn from_path(path: impl AsRef<Path>) -> Result<Package> {
         let mut file = fs::File::open(&path)?;
         Self::from_file(&mut file, path)
     }
 
     pub fn from_file(file: &mut fs::File, path: impl AsRef<Path>) -> Result<Package> {
-        let path = path.as_ref();
-        let dirpath = if let Some(path) = path.parent() {
-            path.to_owned()
-        } else {
-            return Err(Error::Other(format!("could not get parent directory of: {:?}", path)));
-        };
-        let prefix = if let Some(name) = path.file_name() {
-            if let Some(name) = name.to_str() {
-                if let Some(name) = name.strip_suffix("_dir.vpk") {
-                    name.to_owned()
-                } else {
-                    return Err(Error::Other(format!("Filename does not end in \"_dir.vpk\": {:?}", name)));
-                }
-            } else {
-                return Err(Error::Other(format!("Filename contains invalid unicode bytes: {:?}", name)));
-            }
-        } else {
-            return Err(Error::Other(format!("could not get file name of: {:?}", path)));
-        };
+        let (dirpath, prefix) = parse_path(path)?;
 
         let mut file = std::io::BufReader::new(file);
         let mut magic = [0; 4];

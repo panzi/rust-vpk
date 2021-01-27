@@ -3,7 +3,8 @@ use clap::{Arg, App, SubCommand};
 use std::io::{Write};
 
 use vpk::sort::{parse_order, DEFAULT_ORDER};
-use vpk::{Package, Filter};
+use vpk::{Package, Filter, DEFAULT_MAX_INLINE_SIZE, Error};
+use vpk::pack::ArchiveOptions;
 
 pub mod vpk;
 
@@ -56,9 +57,11 @@ fn run() -> vpk::Result<()> {
         .subcommand(SubCommand::with_name("pack")
             .alias("p")
             // TODO: how to distribute files over archives? group them in archive?
-            .arg(Arg::with_name("inline-size").long("inline-size").short("i").takes_value(true))
-            .arg(Arg::with_name("package").index(1).required(true))
-            .arg(Arg::with_name("paths").index(2).multiple(true).required(true)))
+            .arg(Arg::with_name("indir").long("indir").short("i").takes_value(true))
+            .arg(Arg::with_name("archive-from-dirname").long("archive-from-dirname").short("n").takes_value(false).conflicts_with("max-archive-size"))
+            .arg(Arg::with_name("max-archive-size").long("max-archive-size").short("a").takes_value(true))
+            .arg(Arg::with_name("max-inline-size").long("max-inline-size").short("x").takes_value(true))
+            .arg(Arg::with_name("package").index(1).required(true)))
 
         .get_matches();
 
@@ -107,15 +110,50 @@ fn run() -> vpk::Result<()> {
             vpk::unpack(&package, outdir, &filter, verbose, check)?;
         },
         ("pack", Some(args)) => {
-            println!("TODO pack: {:?}", args);
+            let indir   = args.value_of("indir").unwrap_or(".");
+            let path    = args.value_of("package").unwrap();
+            let verbose = args.is_present("verbose");
+            let max_inline_size = if let Some(inline_size) = args.value_of("max-inline-size") {
+                if let Ok(inline_size) = inline_size.parse::<u16>() {
+                    inline_size
+                } else {
+                    return Err(Error::IllegalArgument {
+                        name: "--max-inline-size".to_owned(),
+                        value: inline_size.to_owned(),
+                    });
+                }
+            } else {
+                DEFAULT_MAX_INLINE_SIZE
+            };
+            let arch_opts = if args.is_present("archive-from-dirname") {
+                ArchiveOptions::ArchiveFromDirName
+            } else if let Some(max_arch_size) = args.value_of("max-archive-size") {
+                if let Ok(max_arch_size) = max_arch_size.parse::<u32>() {
+                    ArchiveOptions::MaxArchiveSize(max_arch_size)
+                } else {
+                    return Err(Error::IllegalArgument {
+                        name: "--max-archive-size".to_owned(),
+                        value: max_arch_size.to_owned(),
+                    });
+                }
+            } else {
+                ArchiveOptions::MaxArchiveSize(std::i32::MAX as u32)
+            };
+
+            vpk::pack(&path, &indir, arch_opts, max_inline_size, verbose)?;
         },
         ("", _) => {
-            eprintln!("subcommand required");
-            eprintln!("For more information try --help");
+            return Err(Error::Other(
+                "subcommand required\n\
+                 For more information try --help".to_owned()
+            ));
         },
         (cmd, _) => {
-            eprintln!("unknown subcommand: {}", cmd);
-            eprintln!("For more information try --help");
+            return Err(Error::Other(format!(
+                "unknown subcommand: {}\n\
+                 For more information try --help",
+                 cmd
+            )));
         }
     }
 

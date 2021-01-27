@@ -55,6 +55,6 @@ pub(super) fn format_size(size: u32) -> String {
     } else if size >= 1024 {
         format!("{} K", size / 1024)
     } else {
-        format!("{}", size)
+        format!("{} B", size)
     }
 }
