@@ -4,6 +4,9 @@ pub(crate) mod util;
 pub mod list;
 pub use self::list::list;
 
+pub mod stats;
+pub use self::stats::stats;
+
 pub mod sort;
 pub use self::sort::sort;
 
@@ -14,7 +17,7 @@ pub mod unpack;
 pub use self::unpack::unpack;
 
 pub mod pack;
-pub use self::pack::pack;
+pub use self::pack::pack_v1;
 
 pub mod package;
 pub use self::package::Package;

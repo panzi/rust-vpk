@@ -9,7 +9,7 @@ use crate::vpk::{Package, Result, Error};
 
 pub fn check(package: &Package, verbose: bool, stop_on_error: bool) -> Result<()> {
     let mut digest = crc32::Digest::new(crc32::IEEE);
-    let mut archs = ArchiveCache::new(package);
+    let mut archs = ArchiveCache::for_reading(package.dirpath.to_path_buf(), package.prefix.to_string());
     let mut stdout = std::io::stdout();
     let mut ok = true;
 

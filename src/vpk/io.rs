@@ -38,8 +38,8 @@ where R: Read, R: Seek {
     let archive_index = read_u16(file)?;
     let mut offset    = read_u32(file)?;
     let size          = read_u32(file)?;
-    let mut preload   = vec![0; inline_size as usize];
     let terminator    = read_u16(file)?;
+    let mut preload   = vec![0; inline_size as usize];
 
     if archive_index == DIR_INDEX {
         offset += data_offset;

@@ -5,7 +5,7 @@ use std::io::{Read, Seek};
 use std::collections::HashMap;
 
 use crate::vpk::entry::{Entry, File};
-use crate::vpk::{Result, Error, DIR_INDEX};
+use crate::vpk::{Result, Error};
 use crate::vpk;
 use crate::vpk::sort::{Order, sort};
 use crate::vpk::io::*;
@@ -285,15 +285,7 @@ impl Package {
     }
 
     pub fn archive_path(&self, archive_index: u16) -> PathBuf {
-        let mut path = self.dirpath.clone();
-        
-        if archive_index == DIR_INDEX {
-            path.push(format!("{}_dir.vpk", self.prefix));
-        } else {
-            path.push(format!("{}_{:03}.vpk", self.prefix, archive_index));
-        }
-
-        path
+        archive_path(&self.dirpath, &self.prefix, archive_index)
     }
 }
 

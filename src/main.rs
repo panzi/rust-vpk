@@ -5,6 +5,7 @@ use std::io::{Write};
 use vpk::sort::{parse_order, DEFAULT_ORDER};
 use vpk::{Package, Filter, DEFAULT_MAX_INLINE_SIZE, Error};
 use vpk::pack::ArchiveOptions;
+use vpk::util::parse_size;
 
 pub mod vpk;
 
@@ -39,6 +40,11 @@ fn run() -> vpk::Result<()> {
             .arg(Arg::with_name("package").index(1).required(true))
             .arg(Arg::with_name("paths").index(2).multiple(true)))
 
+        .subcommand(SubCommand::with_name("stats")
+            .alias("s")
+            .arg(Arg::with_name("human-readable").long("human-readable").short("h").takes_value(false))
+            .arg(Arg::with_name("package").index(1).required(true)))
+
         .subcommand(SubCommand::with_name("check")
             .alias("c")
             .arg(Arg::with_name("verbose").long("verbose").short("v").takes_value(false))
@@ -56,8 +62,8 @@ fn run() -> vpk::Result<()> {
 
         .subcommand(SubCommand::with_name("pack")
             .alias("p")
-            // TODO: how to distribute files over archives? group them in archive?
             .arg(Arg::with_name("indir").long("indir").short("i").takes_value(true))
+            .arg(Arg::with_name("alignment").long("alignment").short("a").takes_value(true))
             .arg(Arg::with_name("archive-from-dirname").long("archive-from-dirname").short("n").takes_value(false).conflicts_with("max-archive-size"))
             .arg(Arg::with_name("max-archive-size").long("max-archive-size").short("a").takes_value(true))
             .arg(Arg::with_name("max-inline-size").long("max-inline-size").short("x").takes_value(true))
@@ -113,9 +119,16 @@ fn run() -> vpk::Result<()> {
             let indir   = args.value_of("indir").unwrap_or(".");
             let path    = args.value_of("package").unwrap();
             let verbose = args.is_present("verbose");
+            // TODO: parse_size() that accepts B/K/M/G/... suffixes
             let max_inline_size = if let Some(inline_size) = args.value_of("max-inline-size") {
-                if let Ok(inline_size) = inline_size.parse::<u16>() {
-                    inline_size
+                if let Ok(size) = parse_size(inline_size) {
+                    if size > std::u16::MAX as usize {
+                        return Err(Error::IllegalArgument {
+                            name: "--max-inline-size".to_owned(),
+                            value: inline_size.to_owned(),
+                        });
+                    }
+                    size as u16
                 } else {
                     return Err(Error::IllegalArgument {
                         name: "--max-inline-size".to_owned(),
@@ -125,11 +138,29 @@ fn run() -> vpk::Result<()> {
             } else {
                 DEFAULT_MAX_INLINE_SIZE
             };
+            let alignment = if let Some(alignment) = args.value_of("alignment") {
+                if let Ok(alignment) = parse_size(alignment) {
+                    alignment
+                } else {
+                    return Err(Error::IllegalArgument {
+                        name: "--alignment".to_owned(),
+                        value: alignment.to_owned(),
+                    });
+                }
+            } else {
+                1
+            };
             let arch_opts = if args.is_present("archive-from-dirname") {
                 ArchiveOptions::ArchiveFromDirName
             } else if let Some(max_arch_size) = args.value_of("max-archive-size") {
-                if let Ok(max_arch_size) = max_arch_size.parse::<u32>() {
-                    ArchiveOptions::MaxArchiveSize(max_arch_size)
+                if let Ok(size) = parse_size(max_arch_size) {
+                    if size > std::u32::MAX as usize {
+                        return Err(Error::IllegalArgument {
+                            name: "--max-archive-size".to_owned(),
+                            value: max_arch_size.to_owned(),
+                        });
+                    }
+                    ArchiveOptions::MaxArchiveSize(size as u32)
                 } else {
                     return Err(Error::IllegalArgument {
                         name: "--max-archive-size".to_owned(),
@@ -140,7 +171,15 @@ fn run() -> vpk::Result<()> {
                 ArchiveOptions::MaxArchiveSize(std::i32::MAX as u32)
             };
 
-            vpk::pack(&path, &indir, arch_opts, max_inline_size, verbose)?;
+            vpk::pack_v1(&path, &indir, arch_opts, max_inline_size, alignment, verbose)?;
+        },
+        ("stats", Some(args)) => {
+            let human_readable = args.is_present("human-readable");
+            let path           = args.value_of("package").unwrap();
+
+            let package = Package::from_path(&path)?;
+
+            vpk::stats(&package, &path, human_readable)?;
         },
         ("", _) => {
             return Err(Error::Other(

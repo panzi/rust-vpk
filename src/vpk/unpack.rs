@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::{Path};
 use std::io::{Write, BufWriter};
 use std::fs;
 
@@ -7,21 +7,11 @@ use crc::{crc32, Hasher32};
 use crate::vpk::sort::PHYSICAL_ORDER;
 use crate::vpk::archive_cache::ArchiveCache;
 use crate::vpk::{Package, Result, Filter, Error};
-use crate::vpk::util::split_path;
-
-fn convert_path(prefix: impl AsRef<Path>, path: &str) -> PathBuf {
-    let mut buf = prefix.as_ref().to_path_buf();
-    
-    for (_, item, _) in split_path(path) {
-        buf.push(item);
-    }
-
-    buf
-}
+use crate::vpk::util::vpk_path_to_fs;
 
 pub fn unpack(package: &Package, outdir: impl AsRef<Path>, filter: &Filter, verbose: bool, check: bool) -> Result<()> {
     let mut digest = crc32::Digest::new(crc32::IEEE);
-    let mut archs = ArchiveCache::new(package);
+    let mut archs = ArchiveCache::for_reading(package.dirpath.to_path_buf(), package.prefix.to_string());
 
     let files = match filter {
         Filter::None => package.recursive_file_list(&PHYSICAL_ORDER),
@@ -29,7 +19,7 @@ pub fn unpack(package: &Package, outdir: impl AsRef<Path>, filter: &Filter, verb
     };
 
     for (path, file) in files {
-        let outpath = convert_path(&outdir, &path);
+        let outpath = vpk_path_to_fs(&outdir, &path);
         if verbose {
             println!("writing {:?}", outpath);
         }

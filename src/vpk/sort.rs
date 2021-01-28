@@ -80,34 +80,34 @@ impl SortKey {
     #[inline]
     pub fn to_cmp(&self) -> impl Fn(&Item, &Item) -> Ordering {
         match self {
-            SortKey::Name            => |a: &Item, b: &Item| { a.0.cmp(&b.0) },
-            SortKey::InlineSize      => |a: &Item, b: &Item| { a.1.inline_size.cmp(&(b.1.inline_size)) },
-            SortKey::ArchiveSize     => |a: &Item, b: &Item| { a.1.size.cmp(&(b.1.size)) },
-            SortKey::FullSize        => |a: &Item, b: &Item| { (a.1.size as usize + a.1.inline_size as usize).cmp(&(b.1.size as usize + b.1.inline_size as usize)) },
-            SortKey::CRC32           => |a: &Item, b: &Item| { a.1.crc32.cmp(&b.1.crc32) },
-            SortKey::ArchiveIndex    => |a: &Item, b: &Item| { a.1.archive_index.cmp(&b.1.archive_index) },
-            SortKey::Offset          => |a: &Item, b: &Item| { a.1.offset.cmp(&b.1.offset) },
-            SortKey::Index           => |a: &Item, b: &Item| { a.1.index.cmp(&b.1.index) },
+            SortKey::Name            => |a: &Item, b: &Item| a.0.cmp(&b.0),
+            SortKey::InlineSize      => |a: &Item, b: &Item| a.1.inline_size.cmp(&(b.1.inline_size)),
+            SortKey::ArchiveSize     => |a: &Item, b: &Item| a.1.size.cmp(&(b.1.size)),
+            SortKey::FullSize        => |a: &Item, b: &Item| (a.1.size as usize + a.1.inline_size as usize).cmp(&(b.1.size as usize + b.1.inline_size as usize)),
+            SortKey::CRC32           => |a: &Item, b: &Item| a.1.crc32.cmp(&b.1.crc32),
+            SortKey::ArchiveIndex    => |a: &Item, b: &Item| a.1.archive_index.cmp(&b.1.archive_index),
+            SortKey::Offset          => |a: &Item, b: &Item| a.1.offset.cmp(&b.1.offset),
+            SortKey::Index           => |a: &Item, b: &Item| a.1.index.cmp(&b.1.index),
 
-            SortKey::RevName         => |a: &Item, b: &Item| { b.0.cmp(&a.0) },
-            SortKey::RevArchiveSize  => |a: &Item, b: &Item| { b.1.size.cmp(&(a.1.size)) },
-            SortKey::RevInlineSize   => |a: &Item, b: &Item| { b.1.inline_size.cmp(&(a.1.inline_size)) },
-            SortKey::RevFullSize     => |a: &Item, b: &Item| { (b.1.size as usize + b.1.inline_size as usize).cmp(&(a.1.size as usize + a.1.inline_size as usize)) },
-            SortKey::RevCRC32        => |a: &Item, b: &Item| { b.1.crc32.cmp(&a.1.crc32) },
-            SortKey::RevArchiveIndex => |a: &Item, b: &Item| { b.1.archive_index.cmp(&a.1.archive_index) },
-            SortKey::RevOffset       => |a: &Item, b: &Item| { b.1.offset.cmp(&a.1.offset) },
-            SortKey::RevIndex        => |a: &Item, b: &Item| { b.1.index.cmp(&a.1.index) },
+            SortKey::RevName         => |a: &Item, b: &Item| b.0.cmp(&a.0),
+            SortKey::RevArchiveSize  => |a: &Item, b: &Item| b.1.size.cmp(&(a.1.size)),
+            SortKey::RevInlineSize   => |a: &Item, b: &Item| b.1.inline_size.cmp(&(a.1.inline_size)),
+            SortKey::RevFullSize     => |a: &Item, b: &Item| (b.1.size as usize + b.1.inline_size as usize).cmp(&(a.1.size as usize + a.1.inline_size as usize)),
+            SortKey::RevCRC32        => |a: &Item, b: &Item| b.1.crc32.cmp(&a.1.crc32),
+            SortKey::RevArchiveIndex => |a: &Item, b: &Item| b.1.archive_index.cmp(&a.1.archive_index),
+            SortKey::RevOffset       => |a: &Item, b: &Item| b.1.offset.cmp(&a.1.offset),
+            SortKey::RevIndex        => |a: &Item, b: &Item| b.1.index.cmp(&a.1.index),
         }
     }
 }
 
 fn chain<'a>(cmp1: Box<dyn Fn(&Item, &Item) -> Ordering>, cmp2: Box<dyn Fn(&Item, &Item) -> Ordering>) -> Box<dyn Fn(&Item, &Item) -> Ordering> {
-    Box::new(move |a: &Item, b: &Item| {
+    Box::new(move |a: &Item, b: &Item|
         match cmp1(a, b) {
             Ordering::Equal => cmp2(a, b),
             ord => ord,
         }
-    })
+    )
 }
 
 fn make_chain(cmp1: Box<dyn Fn(&Item, &Item) -> Ordering>, mut iter: std::slice::Iter<SortKey>) -> Box<dyn Fn(&Item, &Item) -> Ordering> {
