@@ -107,7 +107,7 @@ pub fn transfer(in_file: &mut std::fs::File, out_file: &mut std::fs::File, count
     let mut remaining = count;
     while remaining > 0 {
         unsafe {
-            let result = libc::sendfile(in_fd, out_fd, std::ptr::null_mut(), remaining as libc::size_t);
+            let result = libc::sendfile(out_fd, in_fd, std::ptr::null_mut(), remaining as libc::size_t);
 
             if result < 0 {
                 return Err(std::io::Error::last_os_error());
