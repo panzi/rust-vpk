@@ -1,5 +1,5 @@
 use crate::vpk::sort::*;
-use crate::vpk::util::{format_size, print_table};
+use crate::vpk::util::{format_size, print_table, Align::*};
 use crate::vpk::{self, Result, Filter, DIR_INDEX};
 
 pub fn list(package: &vpk::Package, order: &Order, human_readable: bool, filter: &Filter) -> Result<()> {
@@ -25,17 +25,17 @@ pub fn list(package: &vpk::Package, order: &Order, human_readable: bool, filter:
             },
             format!("{}", file.offset),
             if human_readable {
-                format_size(file.inline_size as u32)
+                format_size(file.inline_size as u64)
             } else {
                 format!("{}", file.inline_size)
             },
             if human_readable {
-                format_size(file.size)
+                format_size(file.size as u64)
             } else {
                 format!("{}", file.size)
             },
             if human_readable {
-                format_size(size)
+                format_size(size as u64)
             } else {
                 format!("{}", size)
             },
@@ -44,9 +44,10 @@ pub fn list(package: &vpk::Package, order: &Order, human_readable: bool, filter:
         ]);
     }
 
-    let header = vec!["Index", "Archive", "Offset", "Inline-Size", "Archive-Size", "Full-Size", "CRC32", "Filename"];
-    let right_align = vec![true, true, true, true, true, true, true, false];
-    print_table(&header, &table, &right_align);
+    print_table(
+        &["Index", "Archive", "Offset", "Inline-Size", "Archive-Size", "Full-Size", "CRC32", "Filename"],
+        &[Right,   Right,     Right,    Right,         Right,          Right,       Right,   Left],
+        &table);
 
     Ok(())
 }

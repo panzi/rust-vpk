@@ -50,8 +50,14 @@ pub fn split_path<'a>(path: &'a str) -> PathSplitter<'a> {
     }
 }
 
-pub fn format_size(size: u32) -> String {
-    if size >= 1024 * 1024 * 1024 {
+pub fn format_size(size: u64) -> String {
+    if size >= 1024 * 1024 * 1024 * 1024 * 1024 * 1024 {
+        format!("{} E", size / (1024 * 1024 * 1024 * 1024 * 1024 * 1024))
+    } else if size >= 1024 * 1024 * 1024 * 1024 * 1024 {
+        format!("{} P", size / (1024 * 1024 * 1024 * 1024 * 1024))
+    } else if size >= 1024 * 1024 * 1024 * 1024 {
+        format!("{} T", size / (1024 * 1024 * 1024 * 1024))
+    } else if size >= 1024 * 1024 * 1024 {
         format!("{} G", size / (1024 * 1024 * 1024))
     } else if size >= 1024 * 1024 {
         format!("{} M", size / (1024 * 1024))
@@ -84,16 +90,37 @@ pub fn archive_path(dirpath: impl AsRef<Path>, prefix: &str, archive_index: u16)
     path
 }
 
-pub fn print_row(row: &Vec<impl AsRef<str>>, lens: &Vec<usize>, right_align: &Vec<bool>) {
+pub enum Align {
+    Left,
+    Right
+}
+
+impl Align {
+    pub fn is_left(&self) -> bool {
+        match self {
+            Align::Left  => true,
+            Align::Right => false,
+        }
+    }
+
+    pub fn is_right(&self) -> bool {
+        match self {
+            Align::Left  => false,
+            Align::Right => true,
+        }
+    }
+}
+
+pub fn print_row(row: &[impl AsRef<str>], lens: &[usize], align: &[Align]) {
     let mut first = true;
-    for ((cell, len), right_align) in row.iter().zip(lens.iter()).zip(right_align.iter()) {
+    for ((cell, len), align) in row.iter().zip(lens.iter()).zip(align.iter()) {
         if first {
             first = false;
         } else {
             print!("  "); // cell spacing
         }
 
-        if *right_align {
+        if align.is_right() {
             print!("{:>1$}", cell.as_ref(), *len);
         } else {
             print!("{:<1$}", cell.as_ref(), *len);
@@ -103,9 +130,17 @@ pub fn print_row(row: &Vec<impl AsRef<str>>, lens: &Vec<usize>, right_align: &Ve
     println!();
 }
 
-pub fn print_table(header: &Vec<impl AsRef<str>>, body: &Vec<Vec<impl AsRef<str>>>, right_align: &Vec<bool>) {
+pub fn print_table(header: &[impl AsRef<str>], align: &[Align], body: &[Vec<impl AsRef<str>>]) {
     // TODO: maybe count graphemes? needs extra lib. haven't seen non-ASCII filenames anyway
-    let mut lens: Vec<usize> = header.iter().map(|x| x.as_ref().chars().count()).collect();
+    let mut lens: Vec<usize> = align.iter().map(|_| 0).collect();
+
+    for (cell, max_len) in header.iter().zip(lens.iter_mut()) {
+        let len = cell.as_ref().chars().count();
+        if len > *max_len {
+            *max_len = len;
+        }
+    }
+
     for row in body {
         for (cell, max_len) in row.iter().zip(lens.iter_mut()) {
             let len = cell.as_ref().chars().count();
@@ -115,7 +150,7 @@ pub fn print_table(header: &Vec<impl AsRef<str>>, body: &Vec<Vec<impl AsRef<str>
         }
     }
 
-    print_row(&header, &lens, &right_align);
+    print_row(header, &lens, align);
     let mut first = true;
     for len in lens.iter() {
         let mut len = *len;
@@ -133,7 +168,27 @@ pub fn print_table(header: &Vec<impl AsRef<str>>, body: &Vec<Vec<impl AsRef<str>
     println!();
 
     for row in body {
-        print_row(row, &lens, &right_align);
+        print_row(row, &lens, align);
+    }
+}
+
+pub fn print_headless_table(body: &[Vec<impl AsRef<str>>], align: &[Align]) {
+    let mut lens = Vec::new();
+
+    for row in body {
+        while lens.len() < row.len() {
+            lens.push(0);
+        }
+        for (cell, max_len) in row.iter().zip(lens.iter_mut()) {
+            let len = cell.as_ref().chars().count();
+            if len > *max_len {
+                *max_len = len;
+            }
+        }
+    }
+
+    for row in body {
+        print_row(row, &lens, align);
     }
 }
 

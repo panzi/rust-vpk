@@ -13,7 +13,7 @@ TODO
 * [x] check
 * [x] unpack
 * [ ] pack (and maybe update?)
-* [ ] stats
+* [x] stats
 * [ ] read-only fuse filesystem?
 * [ ] better help message
 * [ ] refactor into lib + cli program?
