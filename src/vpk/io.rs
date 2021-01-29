@@ -122,7 +122,6 @@ pub fn transfer(in_file: &mut std::fs::File, out_file: &mut std::fs::File, count
 
 #[cfg(not(target_os = "linux"))]
 pub fn transfer(in_file: &mut std::fs::File, out_file: &mut std::fs::File, count: usize) -> std::io::Result<()> {
-    use std::io::{Read, Write};
     use crate::vpk::BUFFER_SIZE;
 
     let mut buf = [0u8; BUFFER_SIZE];
