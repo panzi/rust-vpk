@@ -1,11 +1,12 @@
 use std::collections::HashMap;
 use std::fs;
-use std::io::{Read, SeekFrom, Seek};
+use std::io::{Read, Write, SeekFrom, Seek};
 use std::path::{PathBuf};
 
 use crate::vpk::{Result, BUFFER_SIZE, DIR_INDEX};
 use crate::vpk::entry::File;
 use crate::vpk::util::{archive_path};
+use crate::vpk::io::transfer;
 
 pub struct ArchiveCache {
     dirpath: PathBuf,
@@ -82,6 +83,20 @@ impl ArchiveCache {
                 reader.read_exact(buf)?;
                 callback(&buf)?;
             }
+        }
+
+        Ok(())
+    }
+
+    pub fn transfer(&mut self, file: &File, writer: &mut fs::File) -> Result<()> {
+        writer.write_all(&file.preload)?;
+        
+        if file.size > 0 {
+            let reader = self.get(file.archive_index)?;
+
+            reader.seek(SeekFrom::Start(file.offset as u64))?;
+
+            transfer(reader, writer, file.size as usize)?;
         }
 
         Ok(())

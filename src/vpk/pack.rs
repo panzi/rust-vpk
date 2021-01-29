@@ -8,9 +8,9 @@ use crc::{crc32, Hasher32};
 use crate::vpk::{Package, Result, Error, DIR_INDEX, BUFFER_SIZE, VPK_MAGIC};
 use crate::vpk::package::{parse_path};
 use crate::vpk::entry::{Entry, File, Dir};
-use crate::vpk::io::{write_u32, write_str, write_file};
+use crate::vpk::io::{write_u32, write_str, write_file, transfer};
 use crate::vpk::archive_cache::ArchiveCache;
-use crate::vpk::util::split_path;
+use crate::vpk::util::{split_path};
 
 pub enum ArchiveOptions {
     ArchiveFromDirName,
@@ -310,19 +310,14 @@ pub fn pack_v1(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, arch_opts
             fs_path.push(item);
         }
 
-        let mut reader = fs::File::open(fs_path)?;
-        // TODO: optimize using sendfile() on Linux
-        let mut remain = file.inline_size as usize + file.size as usize;
-        while remain >= BUFFER_SIZE {
-            reader.read_exact(&mut gather.buf)?;
-            writer.write_all(&gather.buf)?;
-            remain -= BUFFER_SIZE;
-        }
+        if file.size > 0 {
+            let mut reader = fs::File::open(fs_path)?;
 
-        if remain > 0 {
-            let buf = &mut gather.buf[..remain];
-            reader.read_exact(buf)?;
-            writer.write_all(buf)?;
+            if file.inline_size > 0 {
+                reader.seek(SeekFrom::Start(file.inline_size as u64))?;
+            }
+
+            transfer(&mut reader, writer, file.size as usize)?;
         }
     }
 

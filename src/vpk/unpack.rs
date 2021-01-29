@@ -1,5 +1,5 @@
 use std::path::{Path};
-use std::io::{Write, BufWriter};
+use std::io::{Write};
 use std::fs;
 
 use crc::{crc32, Hasher32};
@@ -26,7 +26,7 @@ pub fn unpack(package: &Package, outdir: impl AsRef<Path>, filter: &Filter, verb
 
         fs::create_dir_all(outpath.parent().unwrap())?;
 
-        let mut writer = BufWriter::new(fs::File::create(&outpath)?);
+        let mut writer = fs::File::create(&outpath)?;
 
         if check {
             digest.reset();
@@ -41,10 +41,7 @@ pub fn unpack(package: &Package, outdir: impl AsRef<Path>, filter: &Filter, verb
                 return Err(Error::Other(format!("{}: CRC32 sum missmatch, expected: 0x{:08x}, actual: 0x{:08x}", path, file.crc32, sum)));
             }
         } else {
-            archs.read_file_data(file, |data| {
-                writer.write_all(data)?;
-                Ok(())
-            })?;
+            archs.transfer(file, &mut writer)?;
         }
     }
     Ok(())

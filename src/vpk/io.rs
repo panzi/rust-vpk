@@ -96,3 +96,49 @@ pub(super) fn write_file(file: &mut impl Write, entry: &vpk::entry::File) -> Res
 
     Ok(())
 }
+
+#[cfg(target_os = "linux")]
+pub fn transfer(in_file: &mut std::fs::File, out_file: &mut std::fs::File, count: usize) -> std::io::Result<()> {
+    use std::os::unix::io::AsRawFd;
+
+    let in_fd  = in_file.as_raw_fd();
+    let out_fd = out_file.as_raw_fd();
+
+    let mut remaining = count;
+    while remaining > 0 {
+        unsafe {
+            let result = libc::sendfile(in_fd, out_fd, std::ptr::null_mut(), remaining as libc::size_t);
+
+            if result < 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+
+            remaining -= result as usize;
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn transfer(in_file: &mut std::fs::File, out_file: &mut std::fs::File, count: usize) -> std::io::Result<()> {
+    use std::io::{Read, Write};
+    use crate::vpk::BUFFER_SIZE;
+
+    let mut buf = [0u8; BUFFER_SIZE];
+
+    let mut remaining = count;
+    while remaining >= BUFFER_SIZE {
+        in_file.read_exact(&mut buf)?;
+        out_file.write_all(&buf)?;
+        remaining -= BUFFER_SIZE;
+    }
+
+    if remaining > 0 {
+        let buf = &mut buf[..remaining];
+        in_file.read_exact(buf)?;
+        out_file.write_all(buf)?;
+    }
+
+    Ok(())
+}
