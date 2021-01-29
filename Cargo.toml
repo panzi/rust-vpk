@@ -9,4 +9,7 @@ edition = "2018"
 [dependencies]
 clap = "2.33.3"
 crc = "1.8.1"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# just for sendfile()
 libc = "0.2.83"
