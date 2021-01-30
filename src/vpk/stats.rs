@@ -6,19 +6,31 @@ use crate::vpk::util::{format_size, print_headless_table, print_table, Align::*}
 
 pub struct ArchStats {
     file_count: usize,
+    file_with_data_count: usize,
     file_size: Option<u64>,
     used_size: u64,
     io_error: Option<std::io::Error>,
 }
 
 impl ArchStats {
-    pub fn new(file_count: usize, used_size: u64) -> Self {
-        Self {
-            file_count,
-            file_size: None,
-            used_size,
-            io_error: None,
-        }
+    pub fn file_count(&self) -> usize {
+        self.file_count
+    }
+
+    pub fn file_with_data_count(&self) -> usize {
+        self.file_with_data_count
+    }
+
+    pub fn file_size(&self) -> Option<u64> {
+        self.file_size
+    }
+
+    pub fn used_size(&self) -> u64 {
+        self.used_size
+    }
+
+    pub fn io_error(&self) -> &Option<std::io::Error> {
+        &self.io_error
     }
 }
 
@@ -34,16 +46,28 @@ impl ExtStats {
             sum_size,
         }
     }
+
+    pub fn file_count(&self) -> usize {
+        self.file_count
+    }
+
+    pub fn sum_size(&self) -> u64 {
+        self.sum_size
+    }
 }
 
 pub struct Stats<'a> {
-    pub file_count: usize,
-    pub dir_count:  usize,
-    pub max_inline_size: u16,
-    pub max_size:        u32,
-    pub max_full_size:   u32,
-    pub extmap:  HashMap<&'a str, ExtStats>,
-    pub archmap: HashMap<u16, ArchStats>,
+    file_count: usize,
+    dir_count:  usize,
+    max_inline_size: u16,
+    max_size:        u32,
+    max_full_size:   u32,
+    min_alignment:   u32,
+    extmap:  HashMap<&'a str, ExtStats>,
+    archmap: HashMap<u16, ArchStats>,
+    error_count: usize,
+    sum_used_size:    u64,
+    sum_archive_size: u64,
 }
 
 impl<'a> Stats<'a> {
@@ -54,9 +78,57 @@ impl<'a> Stats<'a> {
             max_inline_size: 0,
             max_size: 0,
             max_full_size: 0,
+            min_alignment: std::u32::MAX,
             extmap:  HashMap::new(),
             archmap: HashMap::new(),
+            error_count: 0,
+            sum_used_size: 0,
+            sum_archive_size: 0,
         }
+    }
+
+    pub fn file_count(&self) -> usize {
+        self.file_count
+    }
+
+    pub fn dir_count(&self) -> usize {
+        self.dir_count
+    }
+
+    pub fn max_inline_size(&self) -> u16 {
+        self.max_inline_size
+    }
+
+    pub fn max_size(&self) -> u32 {
+        self.max_size
+    }
+
+    pub fn max_full_size(&self) -> u32 {
+        self.max_full_size
+    }
+
+    pub fn min_alignment(&self) -> u32 {
+        self.min_alignment
+    }
+
+    pub fn extensions(&self) -> &HashMap<&'a str, ExtStats> {
+        &self.extmap
+    }
+
+    pub fn archives(&self) -> &HashMap<u16, ArchStats> {
+        &self.archmap
+    }
+
+    pub fn error_count(&self) -> usize {
+        self.error_count
+    }
+
+    pub fn sum_used_size(&self) -> u64 {
+        self.sum_used_size
+    }
+
+    pub fn sum_archive_size(&self) -> u64 {
+        self.sum_archive_size
     }
 
     pub fn scan(package: &'a vpk::Package) -> Self {
@@ -70,12 +142,18 @@ impl<'a> Stats<'a> {
                 archstat.used_size += package.data_offset as u64;
             }
 
+            stats.sum_used_size += archstat.used_size;
+
             match fs::metadata(&path) {
                 Err(error) => {
                     archstat.io_error = Some(error);
+                    stats.error_count += 1;
                 },
                 Ok(meta) => {
-                    archstat.file_size = Some(meta.len());
+                    let file_size = meta.len();
+                    archstat.file_size = Some(file_size);
+
+                    stats.sum_archive_size += file_size;
                 }
             }
         }
@@ -94,6 +172,17 @@ impl<'a> Stats<'a> {
                     self.file_count += 1;
                     let dot_index = name.rfind('.').unwrap();
                     let ext = &name[dot_index + 1..];
+                    let mut alignment = 1;
+
+                    if file.offset > 0 {
+                        while file.offset % (alignment + 1) == 0 {
+                            alignment += 1;
+                        }
+                    }
+
+                    if self.min_alignment > alignment {
+                        self.min_alignment = alignment;
+                    }
 
                     if self.extmap.get_mut(ext).map(|stats| {
                         stats.file_count += 1;
@@ -108,10 +197,19 @@ impl<'a> Stats<'a> {
                     if self.archmap.get_mut(&file.archive_index).map(|stats| {
                         stats.file_count += 1;
                         stats.used_size += file.size as u64;
+                        if file.size > 0 {
+                            stats.file_with_data_count += 1;
+                        }
                     }).is_none() {
                         self.archmap.insert(
                             file.archive_index,
-                            ArchStats::new(1, file.size as u64)
+                            ArchStats {
+                                file_count: 1,
+                                file_with_data_count: (file.size > 0) as usize,
+                                file_size: None,
+                                used_size: file.size as u64,
+                                io_error: None,
+                            }
                         );
                     }
 
@@ -142,18 +240,29 @@ pub fn stats(package: &vpk::Package, human_readable: bool) -> Result<()> {
         |size: u64| format!("{}", size)
     };
 
+    let alignment = if stats.file_count > 0 {
+        format!("{}", stats.min_alignment)
+    } else {
+        "N/A".to_owned()
+    };
+
     print_headless_table(&[
-        vec!["Version:",    &format!("{}", package.version)],
-        vec!["Index Size:", &fmt_size(package.data_offset as u64)],
+        vec!["VPK Version:", &format!("{}", package.version)],
+        vec!["Index Size:",  &fmt_size(package.data_offset as u64)],
         vec![],
         vec!["File Count:",      &format!("{}", stats.file_count)],
         vec!["Directory Count:", &format!("{}", stats.dir_count)],
         vec!["Extension Count:", &format!("{}", stats.extmap.len())],
         vec!["Archive Count:",   &format!("{}", stats.archmap.len())],
+        vec!["IO Error Count:",  &format!("{}", stats.error_count)],
         vec![],
-        vec!["Max Inline-Size:",     &fmt_size(stats.max_inline_size as u64)],
-        vec!["Max Non-Inline-Size:", &fmt_size(stats.max_size as u64)],
-        vec!["Max Full-Size:",       &fmt_size(stats.max_full_size as u64)],
+        vec!["Min Alignment:",         &alignment],
+        vec!["Max Inline-Size:",       &fmt_size(stats.max_inline_size as u64)],
+        vec!["Max Non-Inline-Size:",   &fmt_size(stats.max_size as u64)],
+        vec!["Max Full-Size:",         &fmt_size(stats.max_full_size as u64)],
+        vec!["Sum Used Size:",         &fmt_size(stats.sum_used_size)],
+        vec!["Sum Archive File Size:", &fmt_size(stats.sum_archive_size)],
+        vec!["Wasted Size:",           &fmt_size(stats.sum_archive_size - stats.sum_used_size)],
     ], &[Left, Right]);
 
     println!();
@@ -179,31 +288,44 @@ pub fn stats(package: &vpk::Package, human_readable: bool) -> Result<()> {
     let mut arch_indices: Vec<u16> = stats.archmap.keys().map(|index| *index).collect();
     arch_indices.sort();
 
-    print_table(
-        &["Archive", "File Size", "Used Size", "IO Error"],
-        &[Right,     Right,       Right,       Left],
-        &arch_indices.iter().map(|archive_index| {
-            let archstats = stats.archmap.get(archive_index).unwrap();
-            vec![
-                if *archive_index == DIR_INDEX {
-                    "dir".to_owned()
-                } else {
-                    format!("{:03}", archive_index)
-                },
-                if let Some(size) = archstats.file_size {
-                    fmt_size(size)
-                } else {
-                    "".to_owned()
-                },
-                fmt_size(archstats.used_size as u64),
-                if let Some(io_error) = &archstats.io_error {
-                    format!("{}", io_error)
-                } else {
-                    "".to_owned()
-                }
-            ]
-        }).collect::<Vec<_>>()
-    );
+    let body = arch_indices.iter().map(|archive_index| {
+        let archstats = stats.archmap.get(archive_index).unwrap();
+        let mut row = vec![
+            if *archive_index == DIR_INDEX {
+                "dir".to_owned()
+            } else {
+                format!("{:03}", archive_index)
+            },
+            format!("{}", archstats.file_count),
+            format!("{}", archstats.file_with_data_count),
+            if let Some(size) = archstats.file_size {
+                fmt_size(size)
+            } else {
+                "".to_owned()
+            },
+            fmt_size(archstats.used_size),
+        ];
+
+        if let Some(io_error) = &archstats.io_error {
+            row.push(format!("{}", io_error));
+        }
+
+        row
+    }).collect::<Vec<_>>();
+
+    if stats.error_count > 0 {
+        print_table(
+            &["Archive", "File Count", "File With Data Count", "File Size", "Used Size", "IO Error"],
+            &[Right,     Right,        Right,                  Right,       Right,       Left],
+            &body
+        );
+    } else {
+        print_table(
+            &["Archive", "File Count", "File With Data Count", "File Size", "Used Size"],
+            &[Right,     Right,        Right,                  Right,       Right],
+            &body
+        );
+    }
 
     Ok(())
 }

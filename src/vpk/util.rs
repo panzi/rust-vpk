@@ -52,17 +52,17 @@ pub fn split_path<'a>(path: &'a str) -> PathSplitter<'a> {
 
 pub fn format_size(size: u64) -> String {
     if size >= 1024 * 1024 * 1024 * 1024 * 1024 * 1024 {
-        format!("{} E", size / (1024 * 1024 * 1024 * 1024 * 1024 * 1024))
+        format!("{:.1} E", (size / (1024 * 1024 * 1024 * 1024 * 1024)) as f64 / 1024.0)
     } else if size >= 1024 * 1024 * 1024 * 1024 * 1024 {
-        format!("{} P", size / (1024 * 1024 * 1024 * 1024 * 1024))
+        format!("{:.1} P", (size / (1024 * 1024 * 1024 * 1024)) as f64 / 1024.0)
     } else if size >= 1024 * 1024 * 1024 * 1024 {
-        format!("{} T", size / (1024 * 1024 * 1024 * 1024))
+        format!("{:.1} T", (size / (1024 * 1024 * 1024)) as f64 / 1024.0)
     } else if size >= 1024 * 1024 * 1024 {
-        format!("{} G", size / (1024 * 1024 * 1024))
+        format!("{:.1} G", (size / (1024 * 1024)) as f64 / 1024.0)
     } else if size >= 1024 * 1024 {
-        format!("{} M", size / (1024 * 1024))
+        format!("{:.1} M", (size / 1024) as f64 / 1024.0)
     } else if size >= 1024 {
-        format!("{} K", size / 1024)
+        format!("{:.1} K", size as f64 / 1024.0)
     } else {
         format!("{} B", size)
     }

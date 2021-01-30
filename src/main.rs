@@ -62,12 +62,12 @@ fn run() -> vpk::Result<()> {
 
         .subcommand(SubCommand::with_name("pack")
             .alias("p")
-            .arg(Arg::with_name("indir").long("indir").short("i").takes_value(true))
             .arg(Arg::with_name("alignment").long("alignment").short("a").takes_value(true))
             .arg(Arg::with_name("archive-from-dirname").long("archive-from-dirname").short("n").takes_value(false).conflicts_with("max-archive-size"))
             .arg(Arg::with_name("max-archive-size").long("max-archive-size").short("s").takes_value(true))
             .arg(Arg::with_name("max-inline-size").long("max-inline-size").short("x").takes_value(true))
-            .arg(Arg::with_name("package").index(1).required(true)))
+            .arg(Arg::with_name("package").index(1).required(true))
+            .arg(Arg::with_name("indir").index(2).required(true)))
 
         .get_matches();
 
