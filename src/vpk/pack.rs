@@ -197,7 +197,10 @@ pub fn pack_v1(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, arch_opts
         let mut archive_size = dir_size;
 
         for (_, file) in list.iter_mut() {
-            archive_size += archive_size % alignment;
+            let remainder = archive_size % alignment;
+            if remainder != 0 {
+                archive_size += alignment - remainder;
+            }
 
             let new_archive_size = archive_size + file.size as usize;
             file.offset = archive_size as u32;
