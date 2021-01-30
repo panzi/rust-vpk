@@ -62,7 +62,6 @@ pub struct Stats<'a> {
     max_inline_size: u16,
     max_size:        u32,
     max_full_size:   u32,
-    min_alignment:   u32,
     extmap:  HashMap<&'a str, ExtStats>,
     archmap: HashMap<u16, ArchStats>,
     error_count: usize,
@@ -78,7 +77,6 @@ impl<'a> Stats<'a> {
             max_inline_size: 0,
             max_size: 0,
             max_full_size: 0,
-            min_alignment: std::u32::MAX,
             extmap:  HashMap::new(),
             archmap: HashMap::new(),
             error_count: 0,
@@ -105,10 +103,6 @@ impl<'a> Stats<'a> {
 
     pub fn max_full_size(&self) -> u32 {
         self.max_full_size
-    }
-
-    pub fn min_alignment(&self) -> u32 {
-        self.min_alignment
     }
 
     pub fn extensions(&self) -> &HashMap<&'a str, ExtStats> {
@@ -172,17 +166,6 @@ impl<'a> Stats<'a> {
                     self.file_count += 1;
                     let dot_index = name.rfind('.').unwrap();
                     let ext = &name[dot_index + 1..];
-                    let mut alignment = 1;
-
-                    if file.offset > 0 {
-                        while file.offset % (alignment + 1) == 0 {
-                            alignment += 1;
-                        }
-                    }
-
-                    if self.min_alignment > alignment {
-                        self.min_alignment = alignment;
-                    }
 
                     if self.extmap.get_mut(ext).map(|stats| {
                         stats.file_count += 1;
@@ -240,12 +223,6 @@ pub fn stats(package: &vpk::Package, human_readable: bool) -> Result<()> {
         |size: u64| format!("{}", size)
     };
 
-    let alignment = if stats.file_count > 0 {
-        format!("{}", stats.min_alignment)
-    } else {
-        "N/A".to_owned()
-    };
-
     print_headless_table(&[
         vec!["VPK Version:", &format!("{}", package.version)],
         vec!["Index Size:",  &fmt_size(package.data_offset as u64)],
@@ -256,7 +233,6 @@ pub fn stats(package: &vpk::Package, human_readable: bool) -> Result<()> {
         vec!["Archive Count:",   &format!("{}", stats.archmap.len())],
         vec!["IO Error Count:",  &format!("{}", stats.error_count)],
         vec![],
-        vec!["Min Alignment:",         &alignment],
         vec!["Max Inline-Size:",       &fmt_size(stats.max_inline_size as u64)],
         vec!["Max Non-Inline-Size:",   &fmt_size(stats.max_size as u64)],
         vec!["Max Full-Size:",         &fmt_size(stats.max_full_size as u64)],
