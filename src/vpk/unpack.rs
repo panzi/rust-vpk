@@ -24,24 +24,37 @@ pub fn unpack(package: &Package, outdir: impl AsRef<Path>, filter: &Filter, verb
             println!("writing {:?}", outpath);
         }
 
-        fs::create_dir_all(outpath.parent().unwrap())?;
+        if let Err(error) = fs::create_dir_all(outpath.parent().unwrap()) {
+            return Err(Error::IOWithPath(error, outpath));
+        }
 
-        let mut writer = fs::File::create(&outpath)?;
+        match fs::File::create(&outpath) {
+            Ok(mut writer) => {
+                if check {
+                    digest.reset();
+                    archs.read_file_data(file, |data| {
+                        if let Err(error) = writer.write_all(data) {
+                            return Err(Error::IOWithPath(error, outpath.to_path_buf()));
+                        }
+                        digest.write(data);
+                        Ok(())
+                    })?;
 
-        if check {
-            digest.reset();
-            archs.read_file_data(file, |data| {
-                writer.write_all(data)?;
-                digest.write(data);
-                Ok(())
-            })?;
-
-            let sum = digest.sum32();
-            if sum != file.crc32 {
-                return Err(Error::Other(format!("{}: CRC32 sum missmatch, expected: 0x{:08x}, actual: 0x{:08x}", path, file.crc32, sum)));
+                    let sum = digest.sum32();
+                    if sum != file.crc32 {
+                        return Err(Error::Other(format!("{}: CRC32 sum missmatch, expected: 0x{:08x}, actual: 0x{:08x}", path, file.crc32, sum)));
+                    }
+                } else {
+                    match archs.transfer(file, &mut writer) {
+                        Err(Error::IO(error)) => return Err(Error::IOWithPath(error, outpath)),
+                        Err(other) => return Err(other),
+                        Ok(()) => {}
+                    }
+                }
+            },
+            Err(error) => {
+                return Err(Error::IOWithPath(error, outpath));
             }
-        } else {
-            archs.transfer(file, &mut writer)?;
         }
     }
     Ok(())

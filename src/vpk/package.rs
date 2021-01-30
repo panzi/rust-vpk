@@ -5,8 +5,7 @@ use std::io::{Read, Seek};
 use std::collections::HashMap;
 
 use crate::vpk::entry::{Entry, File};
-use crate::vpk::{Result, Error};
-use crate::vpk;
+use crate::vpk::{self, Result, Error};
 use crate::vpk::sort::{Order, sort};
 use crate::vpk::io::*;
 use crate::vpk::util::*;
@@ -71,12 +70,18 @@ pub(crate) fn parse_path(path: impl AsRef<Path>) -> Result<(PathBuf, String)> {
 
 impl Package {
     pub fn from_path(path: impl AsRef<Path>) -> Result<Package> {
-        let mut file = fs::File::open(&path)?;
-        Self::from_file(&mut file, path)
+        match fs::File::open(&path) {
+            Ok(mut file) => match Self::from_file(&mut file, &path) {
+                Ok(package) => Ok(package),
+                Err(Error::IO(error)) => Err(Error::IOWithPath(error, path.as_ref().to_path_buf())),
+                Err(other) => Err(other),
+            }
+            Err(error) => Err(Error::IOWithPath(error, path.as_ref().to_path_buf())),
+        }
     }
 
-    pub fn from_file(file: &mut fs::File, path: impl AsRef<Path>) -> Result<Package> {
-        let (dirpath, prefix) = parse_path(path)?;
+    fn from_file(file: &mut fs::File, path: impl AsRef<Path>) -> Result<Package> {
+        let (dirpath, prefix) = parse_path(&path)?;
 
         let mut file = std::io::BufReader::new(file);
         let mut magic = [0; 4];
@@ -113,7 +118,10 @@ impl Package {
             (footer_offset, footer_size)
         };
 
-        let header_size = file.seek(io::SeekFrom::Current(0))?;
+        let header_size = match file.seek(io::SeekFrom::Current(0)) {
+            Ok(size) => size,
+            Err(error) => return Err(Error::IOWithPath(error, path.as_ref().to_path_buf())),
+        };
 
         if header_size > u32::MAX as u64 {
             // should not happen

@@ -39,6 +39,7 @@ pub const DEFAULT_MAX_INLINE_SIZE: u16 = 8 * 1024;
 #[derive(Debug)]
 pub enum Error {
     IO(std::io::Error),
+    IOWithPath(std::io::Error, std::path::PathBuf),
     StringFromUTF8(std::string::FromUtf8Error),
     StrFromUTF8(std::str::Utf8Error),
     IllegalMagic(Magic),
@@ -61,6 +62,7 @@ impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Error::IO(err) => err.fmt(f),
+            Error::IOWithPath(err, path) => write!(f, "{:?}: {}", path, err),
             Error::StringFromUTF8(err) => err.fmt(f),
             Error::StrFromUTF8(err) => err.fmt(f),
             Error::IllegalMagic(magic) => write!(f, "illegal file magic: {:02X} {:02X} {:02X} {:02X}", magic[0], magic[1], magic[2], magic[3]),

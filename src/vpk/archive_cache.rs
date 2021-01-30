@@ -3,7 +3,7 @@ use std::fs;
 use std::io::{Read, Write, SeekFrom, Seek};
 use std::path::{PathBuf};
 
-use crate::vpk::{Result, BUFFER_SIZE, DIR_INDEX};
+use crate::vpk::{Result, Error, BUFFER_SIZE, DIR_INDEX};
 use crate::vpk::entry::File;
 use crate::vpk::util::{archive_path};
 use crate::vpk::io::transfer;
@@ -52,35 +52,54 @@ impl ArchiveCache {
         if !self.archives.contains_key(&index) {
             let path = archive_path(&self.dirpath, &self.prefix, index);
             let reader = if index == DIR_INDEX {
-                self.dir_open_options.open(path)?
+                self.dir_open_options.open(&path)
             } else {
-                self.open_options.open(path)?
+                self.open_options.open(&path)
             };
-            self.archives.insert(index, reader);
+            match reader {
+                Ok(reader) => {
+                    self.archives.insert(index, reader);
+                },
+                Err(error) => {
+                    return Err(Error::IOWithPath(error, path));
+                }
+            }
         }
 
         Ok(self.archives.get_mut(&index).unwrap())
+    }
+
+    #[inline]
+    pub fn archive_path(&self, index: u16) -> PathBuf {
+        archive_path(&self.dirpath, &self.prefix, index)
     }
 
     pub fn read_file_data(&mut self, file: &File, mut callback: impl FnMut(&[u8]) -> Result<()>) -> Result<()> {
         callback(&file.preload)?;
 
         if file.size > 0 {
-            let reader = self.get(file.archive_index)?;
+            let archive_index = file.archive_index;
+            let reader = self.get(archive_index)?;
 
-            reader.seek(SeekFrom::Start(file.offset as u64))?;
+            if let Err(error) = reader.seek(SeekFrom::Start(file.offset as u64)) {
+                return Err(Error::IOWithPath(error, self.archive_path(archive_index)));
+            }
 
             let mut buf = [0u8; BUFFER_SIZE];
             let mut remain = file.size as usize;
             while remain >= BUFFER_SIZE {
-                reader.read_exact(&mut buf)?;
+                if let Err(error) = reader.read_exact(&mut buf) {
+                    return Err(Error::IOWithPath(error, self.archive_path(archive_index)));
+                }
                 callback(&buf)?;
                 remain -= BUFFER_SIZE;
             }
 
             if remain > 0 {
                 let buf = &mut buf[..remain];
-                reader.read_exact(buf)?;
+                if let Err(error) = reader.read_exact(buf) {
+                    return Err(Error::IOWithPath(error, self.archive_path(archive_index)));
+                }
                 callback(&buf)?;
             }
         }
@@ -92,9 +111,12 @@ impl ArchiveCache {
         writer.write_all(&file.preload)?;
         
         if file.size > 0 {
-            let reader = self.get(file.archive_index)?;
+            let archive_index = file.archive_index;
+            let reader = self.get(archive_index)?;
 
-            reader.seek(SeekFrom::Start(file.offset as u64))?;
+            if let Err(error) = reader.seek(SeekFrom::Start(file.offset as u64)) {
+                return Err(Error::IOWithPath(error, self.archive_path(archive_index)));
+            }
 
             transfer(reader, writer, file.size as usize)?;
         }

@@ -37,11 +37,22 @@ impl Gather {
 
     fn gather_files(&mut self, entries: &mut HashMap<String, Entry>, archive_index: u16, dirpath: &Path, root: bool) -> Result<usize> {
         let mut index_size = 0;
-        for dirent in read_dir(dirpath)? {
-            let dirent = dirent?;
+        let dirents = match read_dir(dirpath) {
+            Ok(dirents) => dirents,
+            Err(error) => return Err(Error::IOWithPath(error, dirpath.to_path_buf())),
+        };
+        for dirent in dirents {
+            let dirent = match dirent {
+                Ok(dirent) => dirent,
+                Err(error) => return Err(Error::IOWithPath(error, dirpath.to_path_buf())),
+            };
             let os_name = dirent.file_name();
             if let Some(name) = os_name.to_str() {
-                if dirent.file_type()?.is_dir() {
+                let file_type = match dirent.file_type() {
+                    Ok(file_type) => file_type,
+                    Err(error) => return Err(Error::IOWithPath(error, dirent.path())),
+                };
+                if file_type.is_dir() {
                     let mut dir = Dir {
                         children: HashMap::new()
                     };
@@ -65,8 +76,14 @@ impl Gather {
                         self.exts.insert(ext.to_owned());
                     }
 
-                    let mut reader = fs::File::open(dirent.path())?;
-                    let meta = reader.metadata()?;
+                    let mut reader = match fs::File::open(dirent.path()) {
+                        Ok(reader) => reader,
+                        Err(error) => return Err(Error::IOWithPath(error, dirent.path())),
+                    };
+                    let meta = match reader.metadata() {
+                        Ok(meta) => meta,
+                        Err(error) => return Err(Error::IOWithPath(error, dirent.path())),
+                    };
                     let size = meta.len();
 
                     if size > std::i32::MAX as u64 {
@@ -82,19 +99,25 @@ impl Gather {
                         inline_size = size as u16;
                         size = 0;
                         preload.resize(inline_size as usize, 0);
-                        reader.read_exact(&mut preload)?;
+                        if let Err(error) = reader.read_exact(&mut preload) {
+                            return Err(Error::IOWithPath(error, dirent.path()));
+                        }
                         self.digest.write(&preload);
                     } else {
                         let mut remain = size as usize;
                         inline_size = 0;
                         while remain >= BUFFER_SIZE {
-                            reader.read_exact(&mut self.buf)?;
+                            if let Err(error) = reader.read_exact(&mut self.buf) {
+                                return Err(Error::IOWithPath(error, dirent.path()));
+                            }
                             self.digest.write(&mut self.buf);
                             remain -= BUFFER_SIZE;
                         }
                         if remain > 0 {
                             let buf = &mut self.buf[..remain];
-                            reader.read_exact(buf)?;
+                            if let Err(error) = reader.read_exact(buf) {
+                                return Err(Error::IOWithPath(error, dirent.path()));
+                            }
                             self.digest.write(buf);
                         }
                     }
@@ -140,6 +163,46 @@ fn recursive_file_list<'a>(entries: &'a mut HashMap<String, Entry>, pathbuf: &mu
     }
 }
 
+fn write_dir(extmap: &HashMap<&str, HashMap<&str, Vec<(&str, &File)>>>, dirvpk_path: impl AsRef<Path>, index_size: u32) -> std::io::Result<fs::File> {
+    let mut dirfile = fs::File::create(dirvpk_path)?;
+    let mut dirwriter = BufWriter::new(&mut dirfile);
+
+    let mut exts: Vec<&str> = extmap.keys().map(|s| s.as_ref()).collect();
+    exts.sort();
+
+    dirwriter.write_all(&VPK_MAGIC)?;
+
+    write_u32(&mut dirwriter, 1)?;
+    write_u32(&mut dirwriter, index_size)?;
+
+    for ext in &exts {
+        write_str(&mut dirwriter, ext)?;
+
+        let dirmap = extmap.get(ext).unwrap();
+        let mut dirs: Vec<&str> = dirmap.keys().map(|s| s.as_ref()).collect();
+        dirs.sort();
+
+        for dir in &dirs {
+            write_str(&mut dirwriter, dir)?;
+
+            let filelist = dirmap.get(dir).unwrap();
+            for (full_name, file) in filelist {
+                let dot_index = full_name.rfind('.').unwrap();
+                let name = &full_name[..dot_index];
+
+                write_str(&mut dirwriter, name)?;
+                write_file(&mut dirwriter, file)?;
+            }
+        }
+        dirwriter.write_all(&[0])?;
+    }
+    dirwriter.write_all(&[0])?;
+
+    drop(dirwriter);
+
+    Ok(dirfile)
+}
+
 // TODO: more grouping/file order options?
 pub fn pack_v1(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, arch_opts: ArchiveOptions, max_inline_size: u16, alignment: usize, verbose: bool) -> Result<Package> {
     let (dirpath, prefix) = parse_path(&dirvpk_path)?;
@@ -151,9 +214,20 @@ pub fn pack_v1(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, arch_opts
 
     match arch_opts {
         ArchiveOptions::ArchiveFromDirName => {
-            for dirent in read_dir(indir.as_ref())? {
-                let dirent = dirent?;
-                if dirent.file_type()?.is_dir() {
+            let dirents = match read_dir(indir.as_ref()) {
+                Ok(dirents) => dirents,
+                Err(error) => return Err(Error::IOWithPath(error, dirpath.to_path_buf())),
+            };
+            for dirent in dirents {
+                let dirent = match dirent {
+                    Ok(dirent) => dirent,
+                    Err(error) => return Err(Error::IOWithPath(error, dirpath.to_path_buf())),
+                };
+                let file_type = match dirent.file_type() {
+                    Ok(file_type) => file_type,
+                    Err(error) => return Err(Error::IOWithPath(error, dirent.path())),
+                };
+                if file_type.is_dir() {
                     if let Some(name) = dirent.file_name().to_str() {
                         if name.eq("dir") {
                             index_size += gather.gather_files(&mut entries, DIR_INDEX, &dirent.path(), true)?;
@@ -253,40 +327,9 @@ pub fn pack_v1(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, arch_opts
         println!("writing index: {:?}", dirvpk_path.as_ref());
     }
 
-    let mut dirwriter = BufWriter::new(fs::File::create(dirvpk_path)?);
-
-    dirwriter.write_all(&VPK_MAGIC)?;
-    
-    write_u32(&mut dirwriter, 1)?;
-    write_u32(&mut dirwriter, index_size as u32)?;
-
-    let mut exts: Vec<&str> = extmap.keys().map(|s| s.as_ref()).collect();
-    exts.sort();
-
-    for ext in &exts {
-        write_str(&mut dirwriter, ext)?;
-
-        let dirmap = extmap.get(ext).unwrap();
-        let mut dirs: Vec<&str> = dirmap.keys().map(|s| s.as_ref()).collect();
-        dirs.sort();
-
-        for dir in &dirs {
-            write_str(&mut dirwriter, dir)?;
-
-            let filelist = dirmap.get(dir).unwrap();
-            for (full_name, file) in filelist {
-                let dot_index = full_name.rfind('.').unwrap();
-                let name = &full_name[..dot_index];
-
-                write_str(&mut dirwriter, name)?;
-                write_file(&mut dirwriter, file)?;
-            }
-        }
-        dirwriter.write_all(&[0])?;
+    if let Err(error) = write_dir(&extmap, dirvpk_path.as_ref(), index_size as u32) {
+        return Err(Error::IOWithPath(error, dirvpk_path.as_ref().to_path_buf()));
     }
-    dirwriter.write_all(&[0])?;
-
-    drop(dirwriter);
 
     let mut archs = ArchiveCache::for_writing(dirpath.to_path_buf(), prefix.to_string());
 
@@ -297,7 +340,9 @@ pub fn pack_v1(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, arch_opts
     
         let writer = archs.get(file.archive_index)?;
 
-        writer.seek(SeekFrom::Start(file.offset as u64))?;
+        if let Err(error) = writer.seek(SeekFrom::Start(file.offset as u64)) {
+            return Err(Error::IOWithPath(error, archs.archive_path(file.archive_index)));
+        }
 
         let mut fs_path = indir.as_ref().to_path_buf();
 
@@ -314,13 +359,22 @@ pub fn pack_v1(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, arch_opts
         }
 
         if file.size > 0 {
-            let mut reader = fs::File::open(fs_path)?;
+            match fs::File::open(&fs_path) {
+                Ok(mut reader) => {
+                    if file.inline_size > 0 {
+                        if let Err(error) = reader.seek(SeekFrom::Start(file.inline_size as u64)) {
+                            return Err(Error::IOWithPath(error, fs_path));
+                        }
+                    }
 
-            if file.inline_size > 0 {
-                reader.seek(SeekFrom::Start(file.inline_size as u64))?;
+                    if let Err(error) = transfer(&mut reader, writer, file.size as usize) {
+                        return Err(Error::IOWithPath(error, fs_path));
+                    }
+                },
+                Err(error) => {
+                    return Err(Error::IOWithPath(error, fs_path));
+                }
             }
-
-            transfer(&mut reader, writer, file.size as usize)?;
         }
     }
 
