@@ -90,7 +90,7 @@ pub(crate) fn write_file(file: &mut impl Write, entry: &vpk::entry::File) -> std
     write_u16(file, entry.archive_index)?;
     write_u32(file, entry.offset)?;
     write_u32(file, entry.size)?;
-    write_u16(file, 0xFFFF)?;
+    write_u16(file, TERMINATOR)?;
 
     file.write_all(&entry.preload)?;
 

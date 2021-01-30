@@ -9,8 +9,7 @@ use crate::vpk::{Package, Result, Error, DIR_INDEX, BUFFER_SIZE, VPK_MAGIC};
 use crate::vpk::package::{parse_path};
 use crate::vpk::entry::{Entry, File, Dir};
 use crate::vpk::io::{write_u32, write_str, write_file, transfer};
-use crate::vpk::archive_cache::ArchiveCache;
-use crate::vpk::util::{split_path};
+use crate::vpk::util::{split_path, archive_path};
 
 pub enum ArchiveOptions {
     ArchiveFromDirName,
@@ -234,10 +233,10 @@ pub fn pack_v1(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, arch_opts
                         } else if name.len() != 3 {
                             eprintln!("WRANING: directory name is neither 3 digit a number nor \"dir\": {}", name);
                         } else if let Ok(archive_index) = name.parse::<u16>() {
-                            if archive_index < 0x7FFF {
+                            if archive_index < DIR_INDEX {
                                 index_size += gather.gather_files(&mut entries, archive_index, &dirent.path(), true)?;
                             } else {
-                                eprintln!("WRANING: directory name represents a too larg number for an archive index: {}", name);
+                                eprintln!("WRANING: directory name represents a too large number for an archive index: {}", name);
                             }
                         } else {
                             eprintln!("WRANING: directory name is neither 3 digit a number nor \"dir\": {}", name);
@@ -264,45 +263,72 @@ pub fn pack_v1(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, arch_opts
     recursive_file_list(&mut entries, &mut pathbuf, &mut list);
     list.sort_by(|a, b| a.0.cmp(&b.0));
 
-    if let ArchiveOptions::MaxArchiveSize(max_size) = arch_opts {
-        // distribute files to archives
+    match arch_opts {
+        ArchiveOptions::MaxArchiveSize(max_size) => {
+            // distribute files to archives
 
-        let mut archive_index = DIR_INDEX;
-        let mut archive_size = dir_size;
+            let mut archive_index = DIR_INDEX;
+            let mut archive_size = dir_size;
 
-        for (_, file) in list.iter_mut() {
-            let remainder = archive_size % alignment;
-            if remainder != 0 {
-                archive_size += alignment - remainder;
-            }
+            for (_, file) in list.iter_mut() {
+                if file.size > 0 {
+                    let remainder = archive_size % alignment;
+                    if remainder != 0 {
+                        archive_size += alignment - remainder;
+                    }
 
-            let new_archive_size = archive_size + file.size as usize;
-            file.offset = archive_size as u32;
-            if new_archive_size > max_size as usize {
-                if archive_index == DIR_INDEX {
-                    archive_index = 0;
-                } else if archive_index == 999 {
-                    return Err(Error::Other(format!("too many archives")));
-                } else {
-                    archive_index += 1;
+                    let new_archive_size = archive_size + file.size as usize;
+                    file.offset = archive_size as u32;
+                    if new_archive_size > max_size as usize {
+                        if archive_index == DIR_INDEX {
+                            archive_index = 0;
+                        } else if archive_index == 999 {
+                            return Err(Error::Other(format!("too many archives")));
+                        } else {
+                            archive_index += 1;
+                        }
+                        archive_size = file.size as usize;
+                    } else {
+                        archive_size = new_archive_size;
+                    }
+                    file.archive_index = archive_index;
                 }
-                archive_size = file.size as usize;
-            } else {
-                archive_size = new_archive_size;
             }
-            file.archive_index = archive_index;
+        },
+        ArchiveOptions::ArchiveFromDirName => {
+            let mut archmap = HashMap::new();
+            archmap.insert(DIR_INDEX, dir_size);
+
+            for (_, file) in list.iter_mut() {
+                if file.size > 0 {
+                    if !archmap.contains_key(&file.archive_index) {
+                        archmap.insert(file.archive_index, 0);
+                    }
+                    let archive_size = archmap.get_mut(&file.archive_index).unwrap();
+                    let remainder = *archive_size % alignment;
+                    if remainder != 0 {
+                        *archive_size += alignment - remainder;
+                    }
+                    file.offset = *archive_size as u32;
+                    *archive_size += file.size as usize;
+                }
+            }
         }
     }
 
-    // group files by extension and dir
+    // group files by extension and dir, for writing the index
     let mut extmap: HashMap<&str, HashMap<&str, Vec<(&str, &File)>>> =
         HashMap::with_capacity(gather.exts.len());
+
+    // group all of the above also per archive, for writing the data
+    let mut archmap: HashMap<u16, Vec<(&str, &File)>> =
+        HashMap::new();
 
     for ext in &gather.exts {
         extmap.insert(ext, HashMap::new());
     }
 
-    for (path, file) in &list {
+    for (path, file) in list.iter_mut() {
         // I know that there is a '.' in the file name, I checked above.
         let dot_index = path.rfind('.').unwrap();
 
@@ -321,58 +347,84 @@ pub fn pack_v1(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, arch_opts
 
         let filelist = dirmap.get_mut(dirname).unwrap();
         filelist.push((filename, file));
+
+        // group archives
+        if !archmap.contains_key(&file.archive_index) {
+            archmap.insert(file.archive_index, Vec::new());
+        }
+        let sublist = archmap.get_mut(&file.archive_index).unwrap();
+        sublist.push((path, file));
     }
 
     if verbose {
         println!("writing index: {:?}", dirvpk_path.as_ref());
     }
 
-    if let Err(error) = write_dir(&extmap, dirvpk_path.as_ref(), index_size as u32) {
-        return Err(Error::IOWithPath(error, dirvpk_path.as_ref().to_path_buf()));
-    }
+    /*let mut dirwriter =*/ drop(match write_dir(&extmap, dirvpk_path.as_ref(), index_size as u32) {
+        Ok(dirwriter) => dirwriter,
+        Err(error) => return Err(Error::IOWithPath(error, dirvpk_path.as_ref().to_path_buf())),
+    });
 
-    let mut archs = ArchiveCache::for_writing(dirpath.to_path_buf(), prefix.to_string());
+    // XXX: bugged
+    for (archive_index, files) in &archmap {
+        let archive_index = *archive_index;
+        let archpath = archive_path(&dirpath, &prefix, archive_index);
 
-    for (vpk_path, file) in &list {
         if verbose {
-            println!("writing data: {:?}", vpk_path);
-        }
-    
-        let writer = archs.get(file.archive_index)?;
-
-        if let Err(error) = writer.seek(SeekFrom::Start(file.offset as u64)) {
-            return Err(Error::IOWithPath(error, archs.archive_path(file.archive_index)));
+            println!("writing archive: {:?}", archpath);
         }
 
-        let mut fs_path = indir.as_ref().to_path_buf();
+        // TODO: somehow re-use dirwriter from above if archive_index == DIR_INDEX
+        let writer = if archive_index == DIR_INDEX {
+            fs::OpenOptions::new().create(true).write(true).truncate(false).open(&archpath)
+        } else {
+            fs::File::create(&archpath)
+        };
 
-        if let ArchiveOptions::MaxArchiveSize(_) = arch_opts {
-            if file.archive_index == DIR_INDEX {
-                fs_path.push("dir");
-            } else {
-                fs_path.push(format!("{:03}", file.archive_index));
+        let mut writer = match writer {
+            Ok(writer) => writer,
+            Err(error) => return Err(Error::IOWithPath(error, archpath)),
+        };
+
+        for (vpk_path, file) in files {
+            if verbose {
+                println!("writing data: {:?}", vpk_path);
             }
-        }
-
-        for (_, item, _) in split_path(vpk_path) {
-            fs_path.push(item);
-        }
-
-        if file.size > 0 {
-            match fs::File::open(&fs_path) {
-                Ok(mut reader) => {
-                    if file.inline_size > 0 {
-                        if let Err(error) = reader.seek(SeekFrom::Start(file.inline_size as u64)) {
+        
+            if let Err(error) = writer.seek(SeekFrom::Start(file.offset as u64)) {
+                return Err(Error::IOWithPath(error, archpath));
+            }
+    
+            let mut fs_path = indir.as_ref().to_path_buf();
+    
+            if let ArchiveOptions::ArchiveFromDirName = arch_opts {
+                if archive_index == DIR_INDEX {
+                    fs_path.push("dir");
+                } else {
+                    fs_path.push(format!("{:03}", archive_index));
+                }
+            }
+    
+            for (_, item, _) in split_path(vpk_path) {
+                fs_path.push(item);
+            }
+    
+            if file.size > 0 {
+                match fs::File::open(&fs_path) {
+                    Ok(mut reader) => {
+                        if file.inline_size > 0 {
+                            if let Err(error) = reader.seek(SeekFrom::Start(file.inline_size as u64)) {
+                                return Err(Error::IOWithPath(error, fs_path));
+                            }
+                        }
+    
+                        if let Err(error) = transfer(&mut reader, &mut writer, file.size as usize) {
                             return Err(Error::IOWithPath(error, fs_path));
                         }
-                    }
-
-                    if let Err(error) = transfer(&mut reader, writer, file.size as usize) {
+                    },
+                    Err(error) => {
                         return Err(Error::IOWithPath(error, fs_path));
                     }
-                },
-                Err(error) => {
-                    return Err(Error::IOWithPath(error, fs_path));
                 }
             }
         }
