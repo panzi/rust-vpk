@@ -129,7 +129,7 @@ impl Gather {
                             if let Err(error) = reader.read_exact(&mut self.buf) {
                                 return Err(Error::IOWithPath(error, dirent.path()));
                             }
-                            self.digest.write(&mut self.buf);
+                            self.digest.write(&self.buf);
                             remain -= BUFFER_SIZE;
                         }
                         if remain > 0 {
@@ -194,7 +194,7 @@ fn recursive_file_list<'a>(entries: &'a mut HashMap<String, Entry>, pathbuf: &mu
     }
 }
 
-fn write_dir(extmap: &HashMap<&str, HashMap<&str, Vec<&Item>>>, dirvpk_path: impl AsRef<Path>, index_size: u32) -> std::io::Result<fs::File> {
+fn write_dir(extmap: &HashMap<&str, HashMap<&str, Vec<&Item>>>, dirvpk_path: impl AsRef<Path>, dir_size: u32, index_size: u32) -> std::io::Result<fs::File> {
     let mut dirfile = fs::File::create(dirvpk_path)?;
     let mut dirwriter = BufWriter::new(&mut dirfile);
 
@@ -221,7 +221,7 @@ fn write_dir(extmap: &HashMap<&str, HashMap<&str, Vec<&Item>>>, dirvpk_path: imp
                 let name = item.name();
 
                 write_str(&mut dirwriter, name)?;
-                write_file(&mut dirwriter, item.file, index_size)?;
+                write_file(&mut dirwriter, item.file, dir_size)?;
             }
             dirwriter.write_all(&[0])?;
         }
@@ -358,7 +358,6 @@ pub fn pack_v1(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, arch_opts
                     }
 
                     let new_archive_size = archive_size + item.file.size as usize;
-                    item.file.offset = archive_size as u32;
                     if new_archive_size > max_size as usize {
                         if archive_index == DIR_INDEX {
                             archive_index = 0;
@@ -368,7 +367,9 @@ pub fn pack_v1(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, arch_opts
                             archive_index += 1;
                         }
                         archive_size = item.file.size as usize;
+                        item.file.offset = 0;
                     } else {
+                        item.file.offset = archive_size as u32;
                         archive_size = new_archive_size;
                     }
                     item.file.archive_index = archive_index;
@@ -425,7 +426,7 @@ pub fn pack_v1(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, arch_opts
         println!("writing index to file: {:?}", dirvpk_path.as_ref());
     }
 
-    let mut dirwriter = match write_dir(&extmap, dirvpk_path.as_ref(), index_size as u32) {
+    let mut dirwriter = match write_dir(&extmap, dirvpk_path.as_ref(), dir_size as u32, index_size as u32) {
         Ok(dirwriter) => dirwriter,
         Err(error) => return Err(Error::IOWithPath(error, dirvpk_path.as_ref().to_path_buf())),
     };
@@ -463,7 +464,7 @@ pub fn pack_v1(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, arch_opts
 
         for (vpk_path, file) in files {
             if verbose {
-                println!("writing data: {:?}", vpk_path);
+                println!("writing {} bytes at offset {}: {:?}", file.size, file.offset, vpk_path);
             }
 
             if let Err(error) = writer.seek(SeekFrom::Start(file.offset as u64)) {

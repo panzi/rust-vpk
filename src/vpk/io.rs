@@ -84,12 +84,12 @@ pub(crate) fn write_str(file: &mut impl Write, value: &str) -> std::io::Result<(
     Ok(())
 }
 
-pub(crate) fn write_file(file: &mut impl Write, entry: &vpk::entry::File, index_size: u32) -> std::io::Result<()> {
+pub(crate) fn write_file(file: &mut impl Write, entry: &vpk::entry::File, dir_size: u32) -> std::io::Result<()> {
     write_u32(file, entry.crc32)?;
     write_u16(file, entry.inline_size)?;
     write_u16(file, entry.archive_index)?;
-    write_u32(file, if entry.archive_index == DIR_INDEX {
-        entry.offset - index_size
+    write_u32(file, if entry.archive_index == DIR_INDEX && entry.offset != 0 {
+        entry.offset - dir_size
     } else {
         entry.offset
     })?;

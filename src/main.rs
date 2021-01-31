@@ -120,7 +120,6 @@ fn run() -> vpk::Result<()> {
             let indir   = args.value_of("indir").unwrap_or(".");
             let path    = args.value_of("package").unwrap();
             let verbose = args.is_present("verbose");
-            // TODO: parse_size() that accepts B/K/M/G/... suffixes
             let max_inline_size = if let Some(inline_size) = args.value_of("max-inline-size") {
                 if let Ok(size) = parse_size(inline_size) {
                     if size > std::u16::MAX as usize {
