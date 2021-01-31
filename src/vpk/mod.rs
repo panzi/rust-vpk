@@ -25,6 +25,12 @@ pub use self::package::Package;
 pub mod entry;
 pub use self::entry::Entry;
 
+#[cfg(feature = "fuse")]
+pub mod mount;
+
+#[cfg(feature = "fuse")]
+pub use self::mount::mount;
+
 pub mod archive_cache;
 
 pub type Magic = [u8; 4];

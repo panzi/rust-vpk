@@ -29,7 +29,7 @@ fn get_filter(args: &clap::ArgMatches) -> Filter {
 }
 
 fn run() -> vpk::Result<()> {
-    let matches = App::new("VPK Valve Packages")
+    let app = App::new("VPK Valve Packages")
         .version("1.0")
         .author("Mathias Panzenböck <grosser.meister.morti@gmx.net>")
 
@@ -68,9 +68,17 @@ fn run() -> vpk::Result<()> {
             .arg(Arg::with_name("max-inline-size").long("max-inline-size").short("x").takes_value(true))
             .arg(Arg::with_name("verbose").long("verbose").short("v").takes_value(false))
             .arg(Arg::with_name("package").index(1).required(true))
-            .arg(Arg::with_name("indir").index(2).required(true)))
+            .arg(Arg::with_name("indir").index(2).required(true)));
 
-        .get_matches();
+    #[cfg(feature = "fuse")]
+    let app = app.subcommand(SubCommand::with_name("mount")
+        .alias("m")
+        .arg(Arg::with_name("foreground").long("foreground").short("f").takes_value(false))
+        .arg(Arg::with_name("debug").long("debug").short("d").takes_value(false))
+        .arg(Arg::with_name("package").index(1).required(true))
+        .arg(Arg::with_name("mount-point").index(2).required(true)));
+    
+    let matches = app.get_matches();
 
     match matches.subcommand() {
         ("list", Some(args)) => {
@@ -180,6 +188,17 @@ fn run() -> vpk::Result<()> {
             let package = Package::from_path(&path)?;
 
             vpk::stats(&package, human_readable)?;
+        },
+        #[cfg(feature = "fuse")]
+        ("mount", Some(args)) => {
+            let debug       = args.is_present("debug");
+            let foreground  = args.is_present("foreground");
+            let path        = args.value_of("package").unwrap();
+            let mount_point = args.value_of("mount-point").unwrap();
+
+            let package = Package::from_path(&path)?;
+
+            vpk::mount(&package, &mount_point, foreground, debug)?;
         },
         ("", _) => {
             return Err(Error::Other(
