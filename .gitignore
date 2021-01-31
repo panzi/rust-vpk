@@ -1,6 +1,7 @@
 /target
 .*
 *~
+*.vpk
 perf.data
 perf.data.old
 /tmp

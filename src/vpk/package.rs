@@ -1,7 +1,6 @@
 use std::path::{Path, PathBuf};
 use std::fs;
-use std::io;
-use std::io::{Read, Seek};
+use std::io::{Read};
 use std::collections::HashMap;
 
 use crate::vpk::entry::{Entry, File};
@@ -99,9 +98,12 @@ impl Package {
 
         let index_size = read_u32(&mut file)?;
 
+        let header_size: usize;
         let (footer_offset, footer_size) = if version < 2 {
+            header_size = 4 * 3;
             (0u32, 0u32)
         } else {
+            header_size = 4 * 3 + 4 * 4;
             let footer_offset = read_u32(&mut file)?;
             let expect_0      = read_u32(&mut file)?;
             let footer_size   = read_u32(&mut file)?;
@@ -118,15 +120,6 @@ impl Package {
             (footer_offset, footer_size)
         };
 
-        let header_size = match file.seek(io::SeekFrom::Current(0)) {
-            Ok(size) => size,
-            Err(error) => return Err(Error::IOWithPath(error, path.as_ref().to_path_buf())),
-        };
-
-        if header_size > u32::MAX as u64 {
-            // should not happen
-            return Err(Error::Other(format!("offset too big: {}", header_size)));
-        }
         let data_offset = header_size as u32 + index_size;
 
         let mut entries = HashMap::new();

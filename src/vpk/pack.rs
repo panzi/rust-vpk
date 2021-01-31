@@ -23,6 +23,30 @@ struct Gather {
     exts: HashSet<String>,
 }
 
+struct Item<'a> {
+    path: String,
+    dot_index:   usize,
+    slash_index: usize,
+    file: &'a mut File,
+}
+
+impl Item<'_> {
+    #[inline]
+    fn ext(&self) -> &str {
+        &self.path[self.dot_index + 1..]
+    }
+
+    #[inline]
+    fn name(&self) -> &str {
+        &self.path[self.slash_index + 1..self.dot_index]
+    }
+
+    #[inline]
+    fn dir(&self) -> &str {
+        &self.path[..self.slash_index]
+    }
+}
+
 impl Gather {
     #[inline]
     fn new(max_inline_size: u16) -> Self {
@@ -34,8 +58,7 @@ impl Gather {
         }
     }
 
-    fn gather_files(&mut self, entries: &mut HashMap<String, Entry>, archive_index: u16, dirpath: &Path, root: bool) -> Result<usize> {
-        let mut index_size = 0;
+    fn gather_files(&mut self, entries: &mut HashMap<String, Entry>, archive_index: u16, dirpath: &Path, root: bool, verbose: bool) -> Result<()> {
         let dirents = match read_dir(dirpath) {
             Ok(dirents) => dirents,
             Err(error) => return Err(Error::IOWithPath(error, dirpath.to_path_buf())),
@@ -45,6 +68,9 @@ impl Gather {
                 Ok(dirent) => dirent,
                 Err(error) => return Err(Error::IOWithPath(error, dirpath.to_path_buf())),
             };
+            if verbose {
+                println!("reading {:?}", dirent.path());
+            }
             let os_name = dirent.file_name();
             if let Some(name) = os_name.to_str() {
                 let file_type = match dirent.file_type() {
@@ -55,12 +81,7 @@ impl Gather {
                     let mut dir = Dir {
                         children: HashMap::new()
                     };
-                    if !root {
-                        index_size += 1; // for '/'
-                    }
-                    index_size += name.len() + 1;
-                    index_size += self.gather_files(&mut dir.children, archive_index, &dirent.path(), false)?;
-                    index_size += 1; // terminating NIL
+                    self.gather_files(&mut dir.children, archive_index, &dirent.path(), false, verbose)?;
                     entries.insert(name.to_owned(), Entry::Dir(dir));
                 } else if root {
                     return Err(Error::Other(format!("All files must be in sub-directories: {:?}", dirent.path())));
@@ -71,7 +92,6 @@ impl Gather {
 
                     let ext = &name[dot_index + 1..];
                     if !self.exts.contains(ext) {
-                        index_size += ext.len() + 1 + 1;
                         self.exts.insert(ext.to_owned());
                     }
 
@@ -122,7 +142,6 @@ impl Gather {
                     }
                     let crc32 = self.digest.sum32();
 
-                    index_size += dot_index + 1 + 4 + 2 + 2 + 4 + 4 + 2 + inline_size as usize;
                     let file = File {
                         index: 0, // not used when writing
                         crc32,
@@ -141,11 +160,11 @@ impl Gather {
             }
         }
 
-        Ok(index_size)
+        Ok(())
     }
 }
 
-fn recursive_file_list<'a>(entries: &'a mut HashMap<String, Entry>, pathbuf: &mut String, list: &mut Vec<(String, &'a mut File)>) {
+fn recursive_file_list<'a>(entries: &'a mut HashMap<String, Entry>, pathbuf: &mut String, list: &mut Vec<Item<'a>>) {
     for (name, entry) in entries.iter_mut() {
         let len = pathbuf.len();
         pathbuf.push_str(name);
@@ -155,14 +174,27 @@ fn recursive_file_list<'a>(entries: &'a mut HashMap<String, Entry>, pathbuf: &mu
                 recursive_file_list(&mut dir.children, pathbuf, list);
             },
             Entry::File(file) => {
-                list.push((pathbuf.clone(), file));
+                let path = pathbuf.to_string();
+
+                // I know that there is a '.' in the file name, I checked above.
+                let dot_index = path.rfind('.').unwrap();
+
+                // I know that there is a '/' in the path, because I checked above.
+                let slash_index = path[..dot_index].rfind('/').unwrap();
+
+                list.push(Item {
+                    path,
+                    dot_index,
+                    slash_index,
+                    file
+                });
             }
         }
         pathbuf.truncate(len);
     }
 }
 
-fn write_dir(extmap: &HashMap<&str, HashMap<&str, Vec<(&str, &File)>>>, dirvpk_path: impl AsRef<Path>, index_size: u32) -> std::io::Result<fs::File> {
+fn write_dir(extmap: &HashMap<&str, HashMap<&str, Vec<&Item>>>, dirvpk_path: impl AsRef<Path>, index_size: u32) -> std::io::Result<fs::File> {
     let mut dirfile = fs::File::create(dirvpk_path)?;
     let mut dirwriter = BufWriter::new(&mut dirfile);
 
@@ -185,13 +217,13 @@ fn write_dir(extmap: &HashMap<&str, HashMap<&str, Vec<(&str, &File)>>>, dirvpk_p
             write_str(&mut dirwriter, dir)?;
 
             let filelist = dirmap.get(dir).unwrap();
-            for (full_name, file) in filelist {
-                let dot_index = full_name.rfind('.').unwrap();
-                let name = &full_name[..dot_index];
+            for item in filelist {
+                let name = item.name();
 
                 write_str(&mut dirwriter, name)?;
-                write_file(&mut dirwriter, file)?;
+                write_file(&mut dirwriter, item.file, index_size)?;
             }
+            dirwriter.write_all(&[0])?;
         }
         dirwriter.write_all(&[0])?;
     }
@@ -208,8 +240,10 @@ pub fn pack_v1(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, arch_opts
 
     let mut entries = HashMap::new();
     let mut gather = Gather::new(max_inline_size);
-    let mut index_size = 0;
-    let mut list = Vec::new();
+
+    if verbose {
+        println!("scanning {:?}", indir.as_ref());
+    }
 
     match arch_opts {
         ArchiveOptions::ArchiveFromDirName => {
@@ -229,12 +263,12 @@ pub fn pack_v1(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, arch_opts
                 if file_type.is_dir() {
                     if let Some(name) = dirent.file_name().to_str() {
                         if name.eq("dir") {
-                            index_size += gather.gather_files(&mut entries, DIR_INDEX, &dirent.path(), true)?;
+                            gather.gather_files(&mut entries, DIR_INDEX, &dirent.path(), true, verbose)?;
                         } else if name.len() != 3 {
                             eprintln!("WRANING: directory name is neither 3 digit a number nor \"dir\": {}", name);
                         } else if let Ok(archive_index) = name.parse::<u16>() {
                             if archive_index < DIR_INDEX {
-                                index_size += gather.gather_files(&mut entries, archive_index, &dirent.path(), true)?;
+                                gather.gather_files(&mut entries, archive_index, &dirent.path(), true, verbose)?;
                             } else {
                                 eprintln!("WRANING: directory name represents a too large number for an archive index: {}", name);
                             }
@@ -246,23 +280,70 @@ pub fn pack_v1(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, arch_opts
             }
         },
         ArchiveOptions::MaxArchiveSize(_) => {
-            index_size += gather.gather_files(&mut entries, DIR_INDEX, indir.as_ref(), true)?;
+            gather.gather_files(&mut entries, DIR_INDEX, indir.as_ref(), true, verbose)?;
         }
     }
 
-    index_size += 1; // ext terminator
-    let v1_header_size = 4 + 4 + 4;
+    if verbose {
+        print!("calculating index size... ");
+        let _ = std::io::stdout().flush();
+    }
 
+    let mut index_size = 0usize;
+
+    // group files by extension and dir, for writing the index
+    let mut extmap: HashMap<&str, HashMap<&str, Vec<&Item>>> =
+        HashMap::with_capacity(gather.exts.len());
+
+    let mut sizemap: HashMap<&str, HashSet<&str>> =
+        HashMap::with_capacity(gather.exts.len());
+
+    for ext in &gather.exts {
+        extmap.insert(ext, HashMap::new());
+        sizemap.insert(ext, HashSet::new());
+        index_size += ext.len() + 1;
+    }
+    index_size += 1;
+
+    let v1_header_size = 4 + 4 + 4;
+    
+    let mut pathbuf = String::new();
+    let mut list = Vec::new();
+    recursive_file_list(&mut entries, &mut pathbuf, &mut list);
+    list.sort_by(|a, b| a.path.cmp(&b.path));
+
+    for item in &list {
+        let extname  = item.ext();
+        let dirname  = item.dir();
+        let filename = item.name();
+
+        let dirs = sizemap.get_mut(extname).unwrap();
+
+        if !dirs.contains(dirname) {
+            dirs.insert(dirname);
+            index_size += dirname.len() + 1 + 1;
+        }
+
+        index_size += filename.len() + 1 +
+            4 + 2 + 2 + 4 + 4 + 2;
+        index_size += item.file.inline_size as usize;
+    }
+
+    let index_size = index_size;
+    if verbose {
+        println!("{}", index_size);
+    }
+
+    // TODO: correct index_size calculation
     if index_size > std::i32::MAX as usize {
         return Err(Error::Other(format!("index too large: {} > {}", index_size, std::i32::MAX)));
     }
 
     let dir_size = v1_header_size + index_size;
 
-    let mut pathbuf = String::new();
-    recursive_file_list(&mut entries, &mut pathbuf, &mut list);
-    list.sort_by(|a, b| a.0.cmp(&b.0));
-
+    if verbose {
+        println!("distributing files to archives...");
+    }
     match arch_opts {
         ArchiveOptions::MaxArchiveSize(max_size) => {
             // distribute files to archives
@@ -270,15 +351,15 @@ pub fn pack_v1(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, arch_opts
             let mut archive_index = DIR_INDEX;
             let mut archive_size = dir_size;
 
-            for (_, file) in list.iter_mut() {
-                if file.size > 0 {
+            for item in list.iter_mut() {
+                if item.file.size > 0 {
                     let remainder = archive_size % alignment;
                     if remainder != 0 {
                         archive_size += alignment - remainder;
                     }
 
-                    let new_archive_size = archive_size + file.size as usize;
-                    file.offset = archive_size as u32;
+                    let new_archive_size = archive_size + item.file.size as usize;
+                    item.file.offset = archive_size as u32;
                     if new_archive_size > max_size as usize {
                         if archive_index == DIR_INDEX {
                             archive_index = 0;
@@ -287,11 +368,11 @@ pub fn pack_v1(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, arch_opts
                         } else {
                             archive_index += 1;
                         }
-                        archive_size = file.size as usize;
+                        archive_size = item.file.size as usize;
                     } else {
                         archive_size = new_archive_size;
                     }
-                    file.archive_index = archive_index;
+                    item.file.archive_index = archive_index;
                 }
             }
         },
@@ -299,45 +380,30 @@ pub fn pack_v1(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, arch_opts
             let mut archmap = HashMap::new();
             archmap.insert(DIR_INDEX, dir_size);
 
-            for (_, file) in list.iter_mut() {
-                if file.size > 0 {
-                    if !archmap.contains_key(&file.archive_index) {
-                        archmap.insert(file.archive_index, 0);
+            for item in list.iter_mut() {
+                if item.file.size > 0 {
+                    if !archmap.contains_key(&item.file.archive_index) {
+                        archmap.insert(item.file.archive_index, 0);
                     }
-                    let archive_size = archmap.get_mut(&file.archive_index).unwrap();
+                    let archive_size = archmap.get_mut(&item.file.archive_index).unwrap();
                     let remainder = *archive_size % alignment;
                     if remainder != 0 {
                         *archive_size += alignment - remainder;
                     }
-                    file.offset = *archive_size as u32;
-                    *archive_size += file.size as usize;
+                    item.file.offset = *archive_size as u32;
+                    *archive_size += item.file.size as usize;
                 }
             }
         }
     }
 
-    // group files by extension and dir, for writing the index
-    let mut extmap: HashMap<&str, HashMap<&str, Vec<(&str, &File)>>> =
-        HashMap::with_capacity(gather.exts.len());
-
     // group all of the above also per archive, for writing the data
     let mut archmap: HashMap<u16, Vec<(&str, &File)>> =
         HashMap::new();
 
-    for ext in &gather.exts {
-        extmap.insert(ext, HashMap::new());
-    }
-
-    for (path, file) in list.iter_mut() {
-        // I know that there is a '.' in the file name, I checked above.
-        let dot_index = path.rfind('.').unwrap();
-
-        // I know that there is a '/' in the path, because I checked above.
-        let slash_index = path[..dot_index].rfind('/').unwrap();
-
-        let extname  = &path[dot_index + 1..];
-        let dirname  = &path[..slash_index];
-        let filename = &path[slash_index + 1..];
+    for item in &list {
+        let extname = item.ext();
+        let dirname = item.dir();
 
         let dirmap = extmap.get_mut(extname).unwrap();
 
@@ -346,18 +412,18 @@ pub fn pack_v1(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, arch_opts
         }
 
         let filelist = dirmap.get_mut(dirname).unwrap();
-        filelist.push((filename, file));
+        filelist.push(item);
 
         // group archives
-        if !archmap.contains_key(&file.archive_index) {
-            archmap.insert(file.archive_index, Vec::new());
+        if !archmap.contains_key(&item.file.archive_index) {
+            archmap.insert(item.file.archive_index, Vec::new());
         }
-        let sublist = archmap.get_mut(&file.archive_index).unwrap();
-        sublist.push((path, file));
+        let sublist = archmap.get_mut(&item.file.archive_index).unwrap();
+        sublist.push((&item.path, item.file));
     }
 
     if verbose {
-        println!("writing index: {:?}", dirvpk_path.as_ref());
+        println!("writing index to file: {:?}", dirvpk_path.as_ref());
     }
 
     /*let mut dirwriter =*/ drop(match write_dir(&extmap, dirvpk_path.as_ref(), index_size as u32) {
@@ -365,7 +431,6 @@ pub fn pack_v1(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, arch_opts
         Err(error) => return Err(Error::IOWithPath(error, dirvpk_path.as_ref().to_path_buf())),
     });
 
-    // XXX: bugged
     for (archive_index, files) in &archmap {
         let archive_index = *archive_index;
         let archpath = archive_path(&dirpath, &prefix, archive_index);
