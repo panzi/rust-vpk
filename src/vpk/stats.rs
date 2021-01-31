@@ -223,6 +223,12 @@ pub fn stats(package: &vpk::Package, human_readable: bool) -> Result<()> {
         |size: u64| format!("{}", size)
     };
 
+    let wasted = if stats.sum_used_size > stats.sum_archive_size {
+        "Error: Used size bigger than file size!".to_owned()
+    } else {
+        fmt_size(stats.sum_archive_size - stats.sum_used_size)
+    };
+
     print_headless_table(&[
         vec!["VPK Version:", &format!("{}", package.version)],
         vec!["Index Size:",  &fmt_size(package.data_offset as u64)],
@@ -238,7 +244,7 @@ pub fn stats(package: &vpk::Package, human_readable: bool) -> Result<()> {
         vec!["Max Full-Size:",         &fmt_size(stats.max_full_size as u64)],
         vec!["Sum Used Size:",         &fmt_size(stats.sum_used_size)],
         vec!["Sum Archive File Size:", &fmt_size(stats.sum_archive_size)],
-        vec!["Wasted Size:",           &fmt_size(stats.sum_archive_size - stats.sum_used_size)],
+        vec!["Wasted Size:",           &wasted],
     ], &[Left, Right]);
 
     println!();
