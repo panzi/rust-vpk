@@ -12,9 +12,10 @@ TODO
 * [x] list
 * [x] check
 * [x] unpack
-* [ ] pack (and maybe update?)
+* [x] pack
 * [x] stats
 * [ ] read-only fuse filesystem?
-* [ ] better help message
+* [ ] maybe update command?
+* [x] better help message
 * [ ] refactor into lib + cli program?
 * [ ] choose license (probably GPLv3 or LGPLv3)
