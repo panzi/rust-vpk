@@ -267,7 +267,7 @@ pub fn pack_v1(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, arch_opts
                         } else if name.len() != 3 {
                             eprintln!("WRANING: directory name is neither 3 digit a number nor \"dir\": {}", name);
                         } else if let Ok(archive_index) = name.parse::<u16>() {
-                            if archive_index < DIR_INDEX {
+                            if archive_index <= 999 {
                                 gather.gather_files(&mut entries, archive_index, &dirent.path(), true, verbose)?;
                             } else {
                                 eprintln!("WRANING: directory name represents a too large number for an archive index: {}", name);
@@ -301,7 +301,7 @@ pub fn pack_v1(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, arch_opts
     for ext in &gather.exts {
         extmap.insert(ext, HashMap::new());
         sizemap.insert(ext, HashSet::new());
-        index_size += ext.len() + 1;
+        index_size += ext.len() + 1 + 1;
     }
     index_size += 1;
 
@@ -334,7 +334,6 @@ pub fn pack_v1(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, arch_opts
         println!("{}", index_size);
     }
 
-    // TODO: correct index_size calculation
     if index_size > std::i32::MAX as usize {
         return Err(Error::Other(format!("index too large: {} > {}", index_size, std::i32::MAX)));
     }
@@ -426,10 +425,21 @@ pub fn pack_v1(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, arch_opts
         println!("writing index to file: {:?}", dirvpk_path.as_ref());
     }
 
-    /*let mut dirwriter =*/ drop(match write_dir(&extmap, dirvpk_path.as_ref(), index_size as u32) {
+    let mut dirwriter = match write_dir(&extmap, dirvpk_path.as_ref(), index_size as u32) {
         Ok(dirwriter) => dirwriter,
         Err(error) => return Err(Error::IOWithPath(error, dirvpk_path.as_ref().to_path_buf())),
-    });
+    };
+
+    let actual_dir_size = match dirwriter.seek(SeekFrom::Current(0)) {
+        Ok(offset) => offset,
+        Err(error) => return Err(Error::IOWithPath(error, dirvpk_path.as_ref().to_path_buf())),
+    };
+
+    if actual_dir_size != dir_size as u64 {
+        return Err(Error::Other(format!("actual_dir_size {} != dir_size {}", actual_dir_size, dir_size)));
+    }
+
+    drop(dirwriter);
 
     for (archive_index, files) in &archmap {
         let archive_index = *archive_index;
@@ -455,13 +465,13 @@ pub fn pack_v1(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, arch_opts
             if verbose {
                 println!("writing data: {:?}", vpk_path);
             }
-        
+
             if let Err(error) = writer.seek(SeekFrom::Start(file.offset as u64)) {
                 return Err(Error::IOWithPath(error, archpath));
             }
-    
+
             let mut fs_path = indir.as_ref().to_path_buf();
-    
+
             if let ArchiveOptions::ArchiveFromDirName = arch_opts {
                 if archive_index == DIR_INDEX {
                     fs_path.push("dir");
@@ -469,11 +479,11 @@ pub fn pack_v1(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, arch_opts
                     fs_path.push(format!("{:03}", archive_index));
                 }
             }
-    
+
             for (_, item, _) in split_path(vpk_path) {
                 fs_path.push(item);
             }
-    
+
             if file.size > 0 {
                 match fs::File::open(&fs_path) {
                     Ok(mut reader) => {
@@ -482,7 +492,7 @@ pub fn pack_v1(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, arch_opts
                                 return Err(Error::IOWithPath(error, fs_path));
                             }
                         }
-    
+
                         if let Err(error) = transfer(&mut reader, &mut writer, file.size as usize) {
                             return Err(Error::IOWithPath(error, fs_path));
                         }
