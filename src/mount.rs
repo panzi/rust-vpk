@@ -98,8 +98,13 @@ impl VPKFS {
             Ok(meta) => meta,
         };
 
+        let dirpath = match package.dirpath.canonicalize() {
+            Err(error) => return Err(Error::IOWithPath(error, package.dirpath)),
+            Ok(dirpath) => dirpath,
+        };
+
         let mut vpkfs = Self {
-            dirpath:  package.dirpath.to_owned(),
+            dirpath,
             prefix:   package.prefix.to_owned(),
             archives: HashMap::new(),
             inodes:   HashMap::new(),
@@ -539,6 +544,11 @@ impl Default for MountOptions {
 }
 
 pub fn mount(package: Package, mount_point: impl AsRef<Path>, options: MountOptions) -> Result<()> {
+    let mount_point = match mount_point.as_ref().canonicalize() {
+        Ok(mount_point) => mount_point,
+        Err(error) => return Err(Error::IOWithPath(error, mount_point.as_ref().to_owned())),
+    };
+
     let mut fuse_options = vec![
         OsStr::new("fsname=vpkfs"),
         OsStr::new("subtype=vpkfs"),
@@ -553,16 +563,17 @@ pub fn mount(package: Package, mount_point: impl AsRef<Path>, options: MountOpti
         foreground = options.foreground;
     }
 
+    let fs = VPKFS::new(package)?;
+
     if !foreground {
         let daemonize = Daemonize::new()
             .working_directory("/")
             .umask(0);
-        
+
         daemonize.start()?;
     }
 
-    let fs = VPKFS::new(package)?;
-    fuse::mount(fs, mount_point.as_ref(), &fuse_options)?;
+    fuse::mount(fs, mount_point, &fuse_options)?;
 
     Ok(())
 }
