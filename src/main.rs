@@ -198,7 +198,7 @@ fn run() -> vpk::Result<()> {
 
             let package = Package::from_path(&path)?;
 
-            vpk::mount(&package, &mount_point, foreground, debug)?;
+            vpk::mount(package, &mount_point, foreground, debug)?;
         },
         ("", _) => {
             return Err(Error::Other(

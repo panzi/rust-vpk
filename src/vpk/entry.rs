@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-#[derive(Clone)]
 pub struct File {
     pub(crate) index: usize,
     pub(crate) crc32: u32,

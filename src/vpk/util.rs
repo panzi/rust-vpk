@@ -96,6 +96,7 @@ pub enum Align {
 }
 
 impl Align {
+    #[allow(unused)]
     pub fn is_left(&self) -> bool {
         match self {
             Align::Left  => true,
