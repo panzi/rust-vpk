@@ -516,16 +516,41 @@ impl std::convert::From<DaemonizeError> for Error {
     }
 }
 
-pub fn mount(package: Package, mount_point: impl AsRef<Path>, mut foreground: bool, debug: bool) -> Result<()> {
-    let mut options = vec![
+pub struct MountOptions {
+    pub foreground: bool,
+    pub debug: bool,
+}
+
+impl MountOptions {
+    #[inline]
+    pub fn new() -> Self {
+        MountOptions::default()
+    }
+}
+
+impl Default for MountOptions {
+    #[inline]
+    fn default() -> Self {
+        Self {
+            foreground: false,
+            debug: false,
+        }
+    }
+}
+
+pub fn mount(package: Package, mount_point: impl AsRef<Path>, options: MountOptions) -> Result<()> {
+    let mut fuse_options = vec![
         OsStr::new("fsname=vpkfs"),
         OsStr::new("subtype=vpkfs"),
         OsStr::new("ro")
     ];
 
-    if debug {
+    let foreground;
+    if options.debug {
         foreground = true;
-        options.push(OsStr::new("debug"));
+        fuse_options.push(OsStr::new("debug"));
+    } else {
+        foreground = options.foreground;
     }
 
     if !foreground {
@@ -537,7 +562,7 @@ pub fn mount(package: Package, mount_point: impl AsRef<Path>, mut foreground: bo
     }
 
     let fs = VPKFS::new(package)?;
-    fuse::mount(fs, mount_point.as_ref(), &options)?;
+    fuse::mount(fs, mount_point.as_ref(), &fuse_options)?;
 
     Ok(())
 }

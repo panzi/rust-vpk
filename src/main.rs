@@ -12,31 +12,27 @@ pub mod entry;
 pub mod archive_cache;
 pub mod result;
 pub mod consts;
-pub mod filter;
 
 #[cfg(feature = "fuse")]
 pub mod mount;
 
 use clap::{Arg, App, SubCommand};
 
-use std::io::{Write};
-
 use crate::list::list;
 use crate::stats::stats;
-use crate::check::check;
+use crate::check::{check, CheckOptions};
 use crate::unpack::unpack;
-use crate::pack::pack_v1;
+use crate::pack::{pack_v1, PackOptions};
 use crate::package::Package;
 
 use crate::sort::{parse_order, DEFAULT_ORDER};
-use crate::filter::Filter;
 use crate::consts::DEFAULT_MAX_INLINE_SIZE;
 use crate::result::{Error, Result};
-use crate::pack::ArchiveOptions;
+use crate::pack::ArchiveStrategy;
 use crate::util::parse_size;
 
 #[cfg(feature = "fuse")]
-use crate::mount::mount;
+use crate::mount::{mount, MountOptions};
 
 impl From<clap::Error> for crate::result::Error {
     fn from(error: clap::Error) -> Self {
@@ -44,15 +40,29 @@ impl From<clap::Error> for crate::result::Error {
     }
 }
 
-fn get_filter<'a>(args: &'a clap::ArgMatches) -> Filter<'a> {
-    if let Some(paths) = args.values_of("paths") {
-        if paths.len() == 0 {
-            Filter::None
+pub enum Filter<'a> {
+    None,
+    Paths(Vec<&'a str>),
+}
+
+impl<'a> Filter<'a> {
+    pub fn new(args: &'a clap::ArgMatches) -> Self {
+        if let Some(paths) = args.values_of("paths") {
+            if paths.len() == 0 {
+                Filter::None
+            } else {
+                Filter::Paths(paths.collect())
+            }
         } else {
-            Filter::Paths(paths.collect())
+            Filter::None
         }
-    } else {
-        Filter::None
+    }
+
+    pub fn as_ref(&self) -> Option<&[&'a str]> {
+        match self {
+            Filter::None => None,
+            Filter::Paths(paths) => Some(&paths[..])
+        }
     }
 }
 
@@ -76,6 +86,7 @@ fn run() -> Result<()> {
         .subcommand(SubCommand::with_name("check")
             .alias("c")
             .arg(Arg::with_name("verbose").long("verbose").short("v").takes_value(false))
+            .arg(Arg::with_name("human-readable").long("human-readable").short("h").takes_value(false))
             .arg(Arg::with_name("stop-on-error").long("stop-on-error").takes_value(false))
             .arg(Arg::with_name("package").index(1).required(true))
             .arg(Arg::with_name("paths").index(2).multiple(true)))
@@ -121,21 +132,28 @@ fn run() -> Result<()> {
             };
 
             let human_readable = args.is_present("human-readable");
-            let path = args.value_of("package").unwrap();
-            let filter = get_filter(args);
+            let path           = args.value_of("package").unwrap();
+            let filter         = Filter::new(args);
 
             let package = Package::from_path(&path)?;
 
-            list(&package, order, human_readable, &filter)?;
+            list(&package, order, human_readable, filter.as_ref())?;
         },
         ("check", Some(args)) => {
-            let verbose       = args.is_present("verbose");
-            let stop_on_error = args.is_present("stop-on-error");
-            let path          = args.value_of("package").unwrap();
+            let human_readable = args.is_present("human-readable");
+            let verbose        = args.is_present("verbose");
+            let stop_on_error  = args.is_present("stop-on-error");
+            let path           = args.value_of("package").unwrap();
+            let filter         = Filter::new(args);
 
             let package = Package::from_path(&path)?;
 
-            check(&package, verbose, stop_on_error)?;
+            check(&package, CheckOptions {
+                verbose,
+                stop_on_error,
+                human_readable,
+                filter: filter.as_ref()
+            })?;
 
             if verbose {
                 println!("everything ok");
@@ -146,11 +164,11 @@ fn run() -> Result<()> {
             let verbose = args.is_present("verbose");
             let check   = args.is_present("check");
             let path    = args.value_of("package").unwrap();
-            let filter  = get_filter(args);
+            let filter  = Filter::new(args);
 
             let package = Package::from_path(&path)?;
 
-            unpack(&package, outdir, &filter, verbose, check)?;
+            unpack(&package, outdir, filter.as_ref(), verbose, check)?;
         },
         ("pack", Some(args)) => {
             let indir   = args.value_of("indir").unwrap_or(".");
@@ -160,14 +178,14 @@ fn run() -> Result<()> {
                 if let Ok(size) = parse_size(inline_size) {
                     if size > std::u16::MAX as usize {
                         return Err(Error::IllegalArgument {
-                            name: "--max-inline-size".to_owned(),
+                            name: "--max-inline-size",
                             value: inline_size.to_owned(),
                         });
                     }
                     size as u16
                 } else {
                     return Err(Error::IllegalArgument {
-                        name: "--max-inline-size".to_owned(),
+                        name: "--max-inline-size",
                         value: inline_size.to_owned(),
                     });
                 }
@@ -179,35 +197,35 @@ fn run() -> Result<()> {
                     alignment
                 } else {
                     return Err(Error::IllegalArgument {
-                        name: "--alignment".to_owned(),
+                        name: "--alignment",
                         value: alignment.to_owned(),
                     });
                 }
             } else {
                 1
             };
-            let arch_opts = if args.is_present("archive-from-dirname") {
-                ArchiveOptions::ArchiveFromDirName
+            let strategy = if args.is_present("archive-from-dirname") {
+                ArchiveStrategy::ArchiveFromDirName
             } else if let Some(max_arch_size) = args.value_of("max-archive-size") {
                 if let Ok(size) = parse_size(max_arch_size) {
                     if size > std::u32::MAX as usize {
                         return Err(Error::IllegalArgument {
-                            name: "--max-archive-size".to_owned(),
+                            name: "--max-archive-size",
                             value: max_arch_size.to_owned(),
                         });
                     }
-                    ArchiveOptions::MaxArchiveSize(size as u32)
+                    ArchiveStrategy::MaxArchiveSize(size as u32)
                 } else {
                     return Err(Error::IllegalArgument {
-                        name: "--max-archive-size".to_owned(),
+                        name: "--max-archive-size",
                         value: max_arch_size.to_owned(),
                     });
                 }
             } else {
-                ArchiveOptions::MaxArchiveSize(std::i32::MAX as u32)
+                ArchiveStrategy::default()
             };
 
-            pack_v1(&path, &indir, arch_opts, max_inline_size, alignment, verbose)?;
+            pack_v1(&path, &indir, PackOptions { strategy, max_inline_size, alignment, verbose })?;
         },
         ("stats", Some(args)) => {
             let human_readable = args.is_present("human-readable");
@@ -226,7 +244,7 @@ fn run() -> Result<()> {
 
             let package = Package::from_path(&path)?;
 
-            mount(package, &mount_point, foreground, debug)?;
+            mount(package, &mount_point, MountOptions { foreground, debug })?;
         },
         ("", _) => {
             return Err(Error::Other(
@@ -248,7 +266,7 @@ fn run() -> Result<()> {
 
 fn main() {
     if let Err(error) = run() {
-        let _ = writeln!(std::io::stderr(), "{}", error);
+        eprintln!("{}", error);
         std::process::exit(1);
     }
 }

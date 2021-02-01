@@ -67,7 +67,7 @@ impl TryFrom<&str> for SortKey {
             Ok(SortKey::RevIndex)
         } else {
             Err(Error::IllegalArgument {
-                name: "--sort".to_owned(),
+                name: "--sort",
                 value: value.to_owned()
             })
         }

@@ -7,17 +7,16 @@ use crc::{crc32, Hasher32};
 use crate::sort::PHYSICAL_ORDER;
 use crate::archive_cache::ArchiveCache;
 use crate::package::Package;
-use crate::filter::Filter;
 use crate::result::{Result, Error};
 use crate::util::vpk_path_to_fs;
 
-pub fn unpack(package: &Package, outdir: impl AsRef<Path>, filter: &Filter, verbose: bool, check: bool) -> Result<()> {
+pub fn unpack(package: &Package, outdir: impl AsRef<Path>, filter: Option<&[&str]>, verbose: bool, check: bool) -> Result<()> {
     let mut digest = crc32::Digest::new(crc32::IEEE);
     let mut archs = ArchiveCache::for_reading(package.dirpath.to_path_buf(), package.prefix.to_string());
 
     let files = match filter {
-        Filter::None => package.recursive_file_list(&PHYSICAL_ORDER),
-        Filter::Paths(paths) => package.recursive_file_list_from(paths, &PHYSICAL_ORDER)?,
+        None => package.recursive_file_list(&PHYSICAL_ORDER),
+        Some(paths) => package.recursive_file_list_from(paths, &PHYSICAL_ORDER)?,
     };
 
     for (path, file) in files {
@@ -44,7 +43,8 @@ pub fn unpack(package: &Package, outdir: impl AsRef<Path>, filter: &Filter, verb
 
                     let sum = digest.sum32();
                     if sum != file.crc32 {
-                        return Err(Error::Other(format!("{}: CRC32 sum missmatch, expected: 0x{:08x}, actual: 0x{:08x}", path, file.crc32, sum)));
+                        return Err(Error::Other(format!("{}: CRC32 sum missmatch, expected: 0x{:08x}, actual: 0x{:08x}",
+                            path, file.crc32, sum)));
                     }
                 } else {
                     match archs.transfer(file, &mut writer) {

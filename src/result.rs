@@ -9,7 +9,7 @@ pub enum Error {
     IllegalTerminator { terminator: u16, offset: u64 },
     EntryNotADir(String),
     NoSuchEntry(String),
-    IllegalArgument { name: String, value: String },
+    IllegalArgument { name: &'static str, value: String },
     UnexpectedEOF,
     Other(String),
 }

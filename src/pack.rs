@@ -6,15 +6,48 @@ use std::io::{Read, Write, Seek, SeekFrom, BufWriter};
 use crc::{crc32, Hasher32};
 
 use crate::result::{Result, Error};
-use crate::consts::{DIR_INDEX, BUFFER_SIZE, VPK_MAGIC};
+use crate::consts::{DIR_INDEX, BUFFER_SIZE, VPK_MAGIC, DEFAULT_MAX_INLINE_SIZE};
 use crate::package::{Package, parse_path};
 use crate::entry::{Entry, File, Dir};
 use crate::io::{write_u32, write_str, write_file, transfer};
 use crate::util::{split_path, archive_path};
 
-pub enum ArchiveOptions {
+pub enum ArchiveStrategy {
     ArchiveFromDirName,
     MaxArchiveSize(u32),
+}
+
+impl Default for ArchiveStrategy {
+    #[inline]
+    fn default() -> Self {
+        ArchiveStrategy::MaxArchiveSize(std::i32::MAX as u32)
+    }
+}
+
+pub struct PackOptions {
+    pub strategy: ArchiveStrategy,
+    pub max_inline_size: u16,
+    pub alignment: usize,
+    pub verbose: bool,
+}
+
+impl PackOptions {
+    #[inline]
+    pub fn new() -> Self {
+        PackOptions::default()
+    }
+}
+
+impl Default for PackOptions {
+    #[inline]
+    fn default() -> Self {
+        Self {
+            strategy: ArchiveStrategy::default(),
+            max_inline_size: DEFAULT_MAX_INLINE_SIZE,
+            alignment: 1,
+            verbose: false,
+        }
+    }
 }
 
 struct Gather {
@@ -70,7 +103,7 @@ impl Gather {
                 Err(error) => return Err(Error::IOWithPath(error, dirpath.to_path_buf())),
             };
             if verbose {
-                println!("reading {:?}", dirent.path());
+                println!("scanning {:?}", dirent.path());
             }
             let os_name = dirent.file_name();
             if let Some(name) = os_name.to_str() {
@@ -236,18 +269,18 @@ fn write_dir(extmap: &HashMap<&str, HashMap<&str, Vec<&Item>>>, dirvpk_path: imp
 }
 
 // TODO: more grouping/file order options?
-pub fn pack_v1(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, arch_opts: ArchiveOptions, max_inline_size: u16, alignment: usize, verbose: bool) -> Result<Package> {
+pub fn pack_v1(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, options: PackOptions) -> Result<Package> {
     let (dirpath, prefix) = parse_path(&dirvpk_path)?;
 
     let mut entries = HashMap::new();
-    let mut gather = Gather::new(max_inline_size);
+    let mut gather = Gather::new(options.max_inline_size);
 
-    if verbose {
+    if options.verbose {
         println!("scanning {:?}", indir.as_ref());
     }
 
-    match arch_opts {
-        ArchiveOptions::ArchiveFromDirName => {
+    match options.strategy {
+        ArchiveStrategy::ArchiveFromDirName => {
             let dirents = match read_dir(indir.as_ref()) {
                 Ok(dirents) => dirents,
                 Err(error) => return Err(Error::IOWithPath(error, dirpath.to_path_buf())),
@@ -264,28 +297,28 @@ pub fn pack_v1(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, arch_opts
                 if file_type.is_dir() {
                     if let Some(name) = dirent.file_name().to_str() {
                         if name.eq("dir") {
-                            gather.gather_files(&mut entries, DIR_INDEX, &dirent.path(), true, verbose)?;
+                            gather.gather_files(&mut entries, DIR_INDEX, &dirent.path(), true, options.verbose)?;
                         } else if name.len() != 3 {
-                            eprintln!("WRANING: directory name is neither 3 digit a number nor \"dir\": {}", name);
+                            eprintln!("WRANING: directory name is neither 3 digit a number nor \"dir\": {:?}", dirent.path());
                         } else if let Ok(archive_index) = name.parse::<u16>() {
                             if archive_index <= 999 {
-                                gather.gather_files(&mut entries, archive_index, &dirent.path(), true, verbose)?;
+                                gather.gather_files(&mut entries, archive_index, &dirent.path(), true, options.verbose)?;
                             } else {
-                                eprintln!("WRANING: directory name represents a too large number for an archive index: {}", name);
+                                eprintln!("WRANING: directory name represents a too large number for an archive index: {:?}", dirent.path());
                             }
                         } else {
-                            eprintln!("WRANING: directory name is neither 3 digit a number nor \"dir\": {}", name);
+                            eprintln!("WRANING: directory name is neither 3 digit a number nor \"dir\": {:?}", dirent.path());
                         }
                     }
                 }
             }
         },
-        ArchiveOptions::MaxArchiveSize(_) => {
-            gather.gather_files(&mut entries, DIR_INDEX, indir.as_ref(), true, verbose)?;
+        ArchiveStrategy::MaxArchiveSize(_) => {
+            gather.gather_files(&mut entries, DIR_INDEX, indir.as_ref(), true, options.verbose)?;
         }
     }
 
-    if verbose {
+    if options.verbose {
         print!("calculating index size... ");
         let _ = std::io::stdout().flush();
     }
@@ -331,9 +364,6 @@ pub fn pack_v1(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, arch_opts
     }
 
     let index_size = index_size;
-    if verbose {
-        println!("{}", index_size);
-    }
 
     if index_size > std::i32::MAX as usize {
         return Err(Error::Other(format!("index too large: {} > {}", index_size, std::i32::MAX)));
@@ -341,11 +371,11 @@ pub fn pack_v1(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, arch_opts
 
     let dir_size = v1_header_size + index_size;
 
-    if verbose {
+    if options.verbose {
         println!("distributing files to archives...");
     }
-    match arch_opts {
-        ArchiveOptions::MaxArchiveSize(max_size) => {
+    match options.strategy {
+        ArchiveStrategy::MaxArchiveSize(max_size) => {
             // distribute files to archives
 
             let mut archive_index = DIR_INDEX;
@@ -353,9 +383,9 @@ pub fn pack_v1(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, arch_opts
 
             for item in list.iter_mut() {
                 if item.file.size > 0 {
-                    let remainder = archive_size % alignment;
+                    let remainder = archive_size % options.alignment;
                     if remainder != 0 {
-                        archive_size += alignment - remainder;
+                        archive_size += options.alignment - remainder;
                     }
 
                     let new_archive_size = archive_size + item.file.size as usize;
@@ -377,7 +407,7 @@ pub fn pack_v1(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, arch_opts
                 }
             }
         },
-        ArchiveOptions::ArchiveFromDirName => {
+        ArchiveStrategy::ArchiveFromDirName => {
             let mut archmap = HashMap::new();
             archmap.insert(DIR_INDEX, dir_size);
 
@@ -387,9 +417,9 @@ pub fn pack_v1(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, arch_opts
                         archmap.insert(item.file.archive_index, 0);
                     }
                     let archive_size = archmap.get_mut(&item.file.archive_index).unwrap();
-                    let remainder = *archive_size % alignment;
+                    let remainder = *archive_size % options.alignment;
                     if remainder != 0 {
-                        *archive_size += alignment - remainder;
+                        *archive_size += options.alignment - remainder;
                     }
                     item.file.offset = *archive_size as u32;
                     *archive_size += item.file.size as usize;
@@ -423,7 +453,7 @@ pub fn pack_v1(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, arch_opts
         sublist.push((&item.path, item.file));
     }
 
-    if verbose {
+    if options.verbose {
         println!("writing index to file: {:?}", dirvpk_path.as_ref());
     }
 
@@ -447,7 +477,7 @@ pub fn pack_v1(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, arch_opts
         let archive_index = *archive_index;
         let archpath = archive_path(&dirpath, &prefix, archive_index);
 
-        if verbose {
+        if options.verbose {
             println!("writing archive: {:?}", archpath);
         }
 
@@ -464,8 +494,14 @@ pub fn pack_v1(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, arch_opts
         };
 
         for (vpk_path, file) in files {
-            if verbose {
-                println!("writing {} bytes at offset {}: {:?}", file.size, file.offset, vpk_path);
+            if options.verbose {
+                if archive_index == DIR_INDEX {
+                    println!("writing {} bytes at offset {} to {}_dir.vpk: {:?}",
+                        file.size, file.offset, prefix, vpk_path);
+                } else {
+                    println!("writing {} bytes at offset {} to {}_{:03}.vpk: {:?}",
+                        file.size, file.offset, file.archive_index, prefix, vpk_path);
+                }
             }
 
             if let Err(error) = writer.seek(SeekFrom::Start(file.offset as u64)) {
@@ -474,7 +510,7 @@ pub fn pack_v1(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, arch_opts
 
             let mut fs_path = indir.as_ref().to_path_buf();
 
-            if let ArchiveOptions::ArchiveFromDirName = arch_opts {
+            if let ArchiveStrategy::ArchiveFromDirName = options.strategy {
                 if archive_index == DIR_INDEX {
                     fs_path.push("dir");
                 } else {
@@ -507,7 +543,7 @@ pub fn pack_v1(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, arch_opts
         }
     }
 
-    if verbose {
+    if options.verbose {
         println!("done");
     }
 
