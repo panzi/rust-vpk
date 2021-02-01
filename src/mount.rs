@@ -420,7 +420,7 @@ impl<'a> Filesystem for VPKFS {
 
     fn statfs(&mut self, _req: &Request, _ino: u64, reply: ReplyStatfs) {
         reply.statfs(
-            /* blocks  */ 0,
+            /* blocks  */ self.blocks,
             /* bfree   */ 0,
             /* bavail  */ 0,
             /* files   */ self.inodes.len() as u64,
