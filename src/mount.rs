@@ -257,7 +257,7 @@ impl VPKFS {
     }
 }
 
-const TTL: Duration = Duration::from_secs(1);
+const TTL: Duration = Duration::from_secs(std::u64::MAX);
 const DIR_XATTRS:  &[u8] = b"user.vpkfs.dir_path\0";
 const FILE_XATTRS: &[u8] =
     b"user.vpkfs.dir_path\0\
