@@ -14,8 +14,8 @@ TODO
 * [x] unpack
 * [x] pack
 * [x] stats
-* [ ] read-only fuse filesystem?
+* [x] read-only fuse filesystem
 * [ ] maybe update command?
 * [x] better help message
-* [ ] refactor into lib + cli program?
-* [ ] choose license (probably GPLv3 or LGPLv3)
+* [ ] code cleanups/refactorings
+* [ ] choose license (probably GPLv3)

@@ -11,12 +11,15 @@ clap = "2.33.3"
 crc = "1.8.1"
 
 [target.'cfg(target_os = "linux")'.dependencies]
-# just for sendfile()
+# for sendfile() and fuse support
 libc = "0.2.83"
-# FUSE might work on other OSes too (like macOS and BSD)
-# but I don't use anything other than Linux (testing
-# Windows binaries through wine).
+
+# FUSE might work on other OSes too (like macOS and BSD), but I don't use
+# anything other than Linux (testing Windows binaries through wine).
+# Also I use "cntr-fuse" because it seems to be more actively maintained than
+# "fuse". Is that a wise choice?
 cntr-fuse = { version = "0.4", optional = true }
+
 daemonize = { version = "0.4.1", optional = true }
 
 [features]
