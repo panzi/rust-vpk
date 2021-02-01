@@ -10,18 +10,42 @@ use crate::package::Package;
 use crate::result::{Result, Error};
 use crate::util::vpk_path_to_fs;
 
-pub fn unpack(package: &Package, outdir: impl AsRef<Path>, filter: Option<&[&str]>, verbose: bool, check: bool) -> Result<()> {
+pub struct UnpackOptions<'a> {
+    pub filter: Option<&'a [&'a str]>,
+    pub verbose: bool,
+    pub check: bool,
+}
+
+impl UnpackOptions<'_> {
+    #[inline]
+    pub fn new() -> Self {
+        UnpackOptions::default()
+    }
+}
+
+impl Default for UnpackOptions<'_> {
+    #[inline]
+    fn default() -> Self {
+        Self {
+            filter: None,
+            verbose: false,
+            check: false,
+        }
+    }
+}
+
+pub fn unpack(package: &Package, outdir: impl AsRef<Path>, options: UnpackOptions) -> Result<()> {
     let mut digest = crc32::Digest::new(crc32::IEEE);
     let mut archs = ArchiveCache::for_reading(package.dirpath.to_path_buf(), package.prefix.to_string());
 
-    let files = match filter {
+    let files = match options.filter {
         None => package.recursive_file_list(&PHYSICAL_ORDER),
         Some(paths) => package.recursive_file_list_from(paths, &PHYSICAL_ORDER)?,
     };
 
     for (path, file) in files {
         let outpath = vpk_path_to_fs(&outdir, &path);
-        if verbose {
+        if options.verbose {
             println!("writing {:?}", outpath);
         }
 
@@ -31,7 +55,7 @@ pub fn unpack(package: &Package, outdir: impl AsRef<Path>, filter: Option<&[&str
 
         match fs::File::create(&outpath) {
             Ok(mut writer) => {
-                if check {
+                if options.check {
                     digest.reset();
                     archs.read_file_data(file, |data| {
                         if let Err(error) = writer.write_all(data) {

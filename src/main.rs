@@ -18,10 +18,10 @@ pub mod mount;
 
 use clap::{Arg, App, SubCommand};
 
-use crate::list::list;
+use crate::list::{list, ListOptions};
 use crate::stats::stats;
 use crate::check::{check, CheckOptions};
-use crate::unpack::unpack;
+use crate::unpack::{unpack, UnpackOptions};
 use crate::pack::{pack_v1, PackOptions};
 use crate::package::Package;
 
@@ -137,7 +137,11 @@ fn run() -> Result<()> {
 
             let package = Package::from_path(&path)?;
 
-            list(&package, order, human_readable, filter.as_ref())?;
+            list(&package, ListOptions {
+                order,
+                human_readable,
+                filter: filter.as_ref()
+            })?;
         },
         ("check", Some(args)) => {
             let human_readable = args.is_present("human-readable");
@@ -168,7 +172,11 @@ fn run() -> Result<()> {
 
             let package = Package::from_path(&path)?;
 
-            unpack(&package, outdir, filter.as_ref(), verbose, check)?;
+            unpack(&package, outdir, UnpackOptions {
+                filter: filter.as_ref(),
+                verbose,
+                check
+            })?;
         },
         ("pack", Some(args)) => {
             let indir   = args.value_of("indir").unwrap_or(".");

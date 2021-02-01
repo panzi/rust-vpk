@@ -1,22 +1,46 @@
-use crate::sort::Order;
+use crate::sort::{Order, DEFAULT_ORDER};
 use crate::util::{format_size, print_table, Align::*};
 use crate::result::Result;
 use crate::package::Package;
 use crate::consts::DIR_INDEX;
 
-pub fn list(package: &Package, order: &Order, human_readable: bool, filter: Option<&[&str]>) -> Result<()> {
-    let files = match filter {
+pub struct ListOptions<'a> {
+    pub order: &'a Order,
+    pub human_readable: bool,
+    pub filter: Option<&'a [&'a str]>,
+}
+
+impl ListOptions<'_> {
+    #[inline]
+    pub fn new() -> Self {
+        ListOptions::default()
+    }
+}
+
+impl Default for ListOptions<'_> {
+    #[inline]
+    fn default() -> Self {
+        Self {
+            order: &DEFAULT_ORDER,
+            human_readable: false,
+            filter: None,
+        }
+    }
+}
+
+pub fn list(package: &Package, options: ListOptions) -> Result<()> {
+    let files = match options.filter {
         None => {
-            package.recursive_file_list(order)
+            package.recursive_file_list(options.order)
         },
         Some(paths) => {
-            package.recursive_file_list_from(&paths, order)?
+            package.recursive_file_list_from(&paths, options.order)?
         }
     };
 
     let mut table: Vec<Vec<String>> = Vec::new();
 
-    let fmt_size = if human_readable {
+    let fmt_size = if options.human_readable {
         |size: u64| format_size(size)
     } else {
         |size: u64| format!("{}", size)
