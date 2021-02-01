@@ -471,7 +471,20 @@ pub fn pack_v1(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, options: 
         return Err(Error::Other(format!("actual_dir_size {} != dir_size {}", actual_dir_size, dir_size)));
     }
 
-    drop(dirwriter);
+    enum SelectWriter<'a> {
+        Referenced(&'a mut fs::File),
+        Contained(fs::File),
+    }
+
+    impl SelectWriter<'_> {
+        #[inline]
+        fn get(&mut self) -> &mut fs::File {
+            match self {
+                SelectWriter::Referenced(writer) => writer,
+                SelectWriter::Contained(writer)  => writer,
+            }
+        }
+    }
 
     for (archive_index, files) in &archmap {
         let archive_index = *archive_index;
@@ -481,17 +494,13 @@ pub fn pack_v1(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, options: 
             println!("writing archive: {:?}", archpath);
         }
 
-        // TODO: somehow re-use dirwriter from above if archive_index == DIR_INDEX
-        let writer = if archive_index == DIR_INDEX {
-            fs::OpenOptions::new().create(true).write(true).truncate(false).open(&archpath)
+        // TODO: is there a better way to do this?
+        let mut writer = if archive_index == DIR_INDEX {
+            SelectWriter::Referenced(&mut dirwriter)
         } else {
-            fs::File::create(&archpath)
+            SelectWriter::Contained(fs::File::create(&archpath)?)
         };
-
-        let mut writer = match writer {
-            Ok(writer) => writer,
-            Err(error) => return Err(Error::IOWithPath(error, archpath)),
-        };
+        let writer = writer.get();
 
         for (vpk_path, file) in files {
             if options.verbose {
@@ -531,7 +540,7 @@ pub fn pack_v1(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, options: 
                             }
                         }
 
-                        if let Err(error) = transfer(&mut reader, &mut writer, file.size as usize) {
+                        if let Err(error) = transfer(&mut reader, writer, file.size as usize) {
                             return Err(Error::IOWithPath(error, fs_path));
                         }
                     },
