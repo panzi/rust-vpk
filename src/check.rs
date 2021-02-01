@@ -3,9 +3,10 @@ use std::io::Write;
 
 use crc::{crc32, Hasher32};
 
-use crate::vpk::sort::PHYSICAL_ORDER;
-use crate::vpk::archive_cache::ArchiveCache;
-use crate::vpk::{Package, Result, Error};
+use crate::sort::PHYSICAL_ORDER;
+use crate::archive_cache::ArchiveCache;
+use crate::package::Package;
+use crate::result::{Result, Error};
 
 pub fn check(package: &Package, verbose: bool, stop_on_error: bool) -> Result<()> {
     let mut digest = crc32::Digest::new(crc32::IEEE);

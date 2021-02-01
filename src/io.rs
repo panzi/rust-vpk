@@ -1,7 +1,8 @@
 use std::io::{Read, BufRead, Write, SeekFrom, Seek};
 
-use crate::vpk;
-use crate::vpk::{Result, Error, DIR_INDEX, TERMINATOR};
+use crate::result::{Result, Error};
+use crate::consts::{DIR_INDEX, TERMINATOR};
+use crate::entry;
 
 #[inline]
 pub(crate) fn read_u16(file: &mut impl Read) -> std::io::Result<u16> {
@@ -31,7 +32,7 @@ pub(crate) fn read_str<'a>(file: &mut impl BufRead, mut buffer: &'a mut Vec<u8>)
     Ok(std::str::from_utf8(buffer)?)
 }
 
-pub(crate) fn read_file<R>(file: &mut R, index: usize, data_offset: u32) -> Result<vpk::entry::File>
+pub(crate) fn read_file<R>(file: &mut R, index: usize, data_offset: u32) -> Result<entry::File>
 where R: Read, R: Seek {
     let crc32         = read_u32(file)?;
     let inline_size   = read_u16(file)?;
@@ -52,7 +53,7 @@ where R: Read, R: Seek {
 
     file.read_exact(&mut preload)?;
 
-    Ok(vpk::entry::File {
+    Ok(entry::File {
         index,
         crc32,
         inline_size,
@@ -84,7 +85,7 @@ pub(crate) fn write_str(file: &mut impl Write, value: &str) -> std::io::Result<(
     Ok(())
 }
 
-pub(crate) fn write_file(file: &mut impl Write, entry: &vpk::entry::File, dir_size: u32) -> std::io::Result<()> {
+pub(crate) fn write_file(file: &mut impl Write, entry: &entry::File, dir_size: u32) -> std::io::Result<()> {
     write_u32(file, entry.crc32)?;
     write_u16(file, entry.inline_size)?;
     write_u16(file, entry.archive_index)?;
@@ -126,7 +127,7 @@ pub fn transfer(in_file: &mut std::fs::File, out_file: &mut std::fs::File, count
 
 #[cfg(not(target_os = "linux"))]
 pub fn transfer(in_file: &mut std::fs::File, out_file: &mut std::fs::File, count: usize) -> std::io::Result<()> {
-    use crate::vpk::BUFFER_SIZE;
+    use crate::consts::BUFFER_SIZE;
 
     let mut buf = [0u8; BUFFER_SIZE];
 

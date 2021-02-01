@@ -5,11 +5,12 @@ use std::io::{Read, Write, Seek, SeekFrom, BufWriter};
 
 use crc::{crc32, Hasher32};
 
-use crate::vpk::{Package, Result, Error, DIR_INDEX, BUFFER_SIZE, VPK_MAGIC};
-use crate::vpk::package::{parse_path};
-use crate::vpk::entry::{Entry, File, Dir};
-use crate::vpk::io::{write_u32, write_str, write_file, transfer};
-use crate::vpk::util::{split_path, archive_path};
+use crate::result::{Result, Error};
+use crate::consts::{DIR_INDEX, BUFFER_SIZE, VPK_MAGIC};
+use crate::package::{Package, parse_path};
+use crate::entry::{Entry, File, Dir};
+use crate::io::{write_u32, write_str, write_file, transfer};
+use crate::util::{split_path, archive_path};
 
 pub enum ArchiveOptions {
     ArchiveFromDirName,

@@ -3,11 +3,15 @@ use std::fs;
 use std::io::{Read};
 use std::collections::HashMap;
 
-use crate::vpk::entry::{Entry, File};
-use crate::vpk::{self, Result, Error};
-use crate::vpk::sort::{Order, sort};
-use crate::vpk::io::*;
-use crate::vpk::util::*;
+use crate::entry;
+use crate::entry::{Entry, File};
+use crate::result::{Result, Error};
+use crate::sort::{Order, sort};
+use crate::consts::VPK_MAGIC;
+use crate::io::*;
+use crate::util::*;
+
+pub type Magic = [u8; 4];
 
 pub struct Package {
     pub(crate) dirpath: PathBuf,
@@ -23,7 +27,7 @@ pub struct Package {
 fn mkpath<'a>(mut entries: &'a mut HashMap<String, Entry>, dirpath: &str) -> Result<&'a mut HashMap<String, Entry>> {
     for (path, item, _) in split_path(dirpath) {
         if !entries.contains_key(item) {
-            let dir = Entry::Dir(vpk::entry::Dir {
+            let dir = Entry::Dir(entry::Dir {
                 children: HashMap::new(),
             });
             entries.insert(item.to_owned(), dir);
@@ -86,7 +90,7 @@ impl Package {
         let mut magic = [0; 4];
         file.read_exact(&mut magic)?;
 
-        if magic != vpk::VPK_MAGIC {
+        if magic != VPK_MAGIC {
             return Err(Error::IllegalMagic(magic));
         }
 

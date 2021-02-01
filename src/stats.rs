@@ -1,8 +1,11 @@
 use std::fs;
 use std::collections::HashMap;
 
-use crate::vpk::{self, Result, Entry, DIR_INDEX};
-use crate::vpk::util::{format_size, print_headless_table, print_table, Align::*};
+use crate::package::Package;
+use crate::result::Result;
+use crate::consts::DIR_INDEX;
+use crate::entry::Entry;
+use crate::util::{format_size, print_headless_table, print_table, Align::*};
 
 pub struct ArchStats {
     file_count: usize,
@@ -125,7 +128,7 @@ impl<'a> Stats<'a> {
         self.sum_archive_size
     }
 
-    pub fn scan(package: &'a vpk::Package) -> Self {
+    pub fn scan(package: &'a Package) -> Self {
         let mut stats = Self::new();
         stats.scan_entries(&package.entries);
 
@@ -214,7 +217,7 @@ impl<'a> Stats<'a> {
     }
 }
 
-pub fn stats(package: &vpk::Package, human_readable: bool) -> Result<()> {
+pub fn stats(package: &Package, human_readable: bool) -> Result<()> {
     let stats = Stats::scan(package);
 
     let fmt_size = if human_readable {

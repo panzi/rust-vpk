@@ -1,8 +1,11 @@
-use crate::vpk::sort::*;
-use crate::vpk::util::{format_size, print_table, Align::*};
-use crate::vpk::{self, Result, Filter, DIR_INDEX};
+use crate::sort::Order;
+use crate::util::{format_size, print_table, Align::*};
+use crate::result::Result;
+use crate::filter::Filter;
+use crate::package::Package;
+use crate::consts::DIR_INDEX;
 
-pub fn list(package: &vpk::Package, order: &Order, human_readable: bool, filter: &Filter) -> Result<()> {
+pub fn list(package: &Package, order: &Order, human_readable: bool, filter: &Filter) -> Result<()> {
     let files = match filter {
         Filter::None => {
             package.recursive_file_list(order)

@@ -3,10 +3,11 @@ use std::fs;
 use std::io::{Read, Write, SeekFrom, Seek};
 use std::path::{PathBuf};
 
-use crate::vpk::{Result, Error, BUFFER_SIZE, DIR_INDEX};
-use crate::vpk::entry::File;
-use crate::vpk::util::{archive_path};
-use crate::vpk::io::transfer;
+use crate::consts::{BUFFER_SIZE, DIR_INDEX};
+use crate::result::{Result, Error};
+use crate::entry::File;
+use crate::util::{archive_path};
+use crate::io::transfer;
 
 pub struct ArchiveCache {
     dirpath: PathBuf,

@@ -1,8 +1,8 @@
 use std::cmp::Ordering;
 use std::convert::TryFrom;
 
-use crate::vpk::{Result, Error};
-use crate::vpk::entry::{File};
+use crate::result::{Result, Error};
+use crate::entry::File;
 
 #[derive(Debug)]
 pub enum SortKey {

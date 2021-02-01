@@ -4,10 +4,12 @@ use std::fs;
 
 use crc::{crc32, Hasher32};
 
-use crate::vpk::sort::PHYSICAL_ORDER;
-use crate::vpk::archive_cache::ArchiveCache;
-use crate::vpk::{Package, Result, Filter, Error};
-use crate::vpk::util::vpk_path_to_fs;
+use crate::sort::PHYSICAL_ORDER;
+use crate::archive_cache::ArchiveCache;
+use crate::package::Package;
+use crate::filter::Filter;
+use crate::result::{Result, Error};
+use crate::util::vpk_path_to_fs;
 
 pub fn unpack(package: &Package, outdir: impl AsRef<Path>, filter: &Filter, verbose: bool, check: bool) -> Result<()> {
     let mut digest = crc32::Digest::new(crc32::IEEE);

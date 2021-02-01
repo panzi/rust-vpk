@@ -1,6 +1,8 @@
 use std::str::FromStr;
 use std::path::{Path, PathBuf};
 
+use crate::consts::DIR_INDEX;
+
 pub struct PathSplitter<'a> {
     path: &'a str,
     index: usize,
@@ -81,7 +83,7 @@ pub fn vpk_path_to_fs(prefix: impl AsRef<Path>, path: &str) -> PathBuf {
 pub fn archive_path(dirpath: impl AsRef<Path>, prefix: &str, archive_index: u16) -> PathBuf {
     let mut path = dirpath.as_ref().to_path_buf();
     
-    if archive_index == crate::vpk::DIR_INDEX {
+    if archive_index == DIR_INDEX {
         path.push(format!("{}_dir.vpk", prefix));
     } else {
         path.push(format!("{}_{:03}.vpk", prefix, archive_index));

@@ -1,17 +1,46 @@
+pub(crate) mod io;
+pub(crate) mod util;
+
+pub mod list;
+pub mod stats;
+pub mod sort;
+pub mod check;
+pub mod unpack;
+pub mod pack;
+pub mod package;
+pub mod entry;
+pub mod archive_cache;
+pub mod result;
+pub mod consts;
+pub mod filter;
+
+#[cfg(feature = "fuse")]
+pub mod mount;
+
 use clap::{Arg, App, SubCommand};
 
 use std::io::{Write};
 
-use vpk::sort::{parse_order, DEFAULT_ORDER};
-use vpk::{Package, Filter, DEFAULT_MAX_INLINE_SIZE, Error};
-use vpk::pack::ArchiveOptions;
-use vpk::util::parse_size;
+use crate::list::list;
+use crate::stats::stats;
+use crate::check::check;
+use crate::unpack::unpack;
+use crate::pack::pack_v1;
+use crate::package::Package;
 
-pub mod vpk;
+use crate::sort::{parse_order, DEFAULT_ORDER};
+use crate::filter::Filter;
+use crate::consts::DEFAULT_MAX_INLINE_SIZE;
+use crate::result::{Error, Result};
+use crate::pack::ArchiveOptions;
+use crate::util::parse_size;
 
-impl From<clap::Error> for vpk::Error {
+#[cfg(feature = "fuse")]
+use crate::mount::mount;
+
+impl From<clap::Error> for crate::result::Error {
     fn from(error: clap::Error) -> Self {
-        vpk::Error::Other(error.message)
+        crate::result::Error::Other(error.message)
     }
 }
 
@@ -27,7 +56,7 @@ fn get_filter<'a>(args: &'a clap::ArgMatches) -> Filter<'a> {
     }
 }
 
-fn run() -> vpk::Result<()> {
+fn run() -> Result<()> {
     let app = App::new("VPK Valve Packages")
         .version("1.0")
         .author("Mathias Panzenböck <grosser.meister.morti@gmx.net>")
@@ -97,7 +126,7 @@ fn run() -> vpk::Result<()> {
 
             let package = Package::from_path(&path)?;
 
-            vpk::list(&package, order, human_readable, &filter)?;
+            list(&package, order, human_readable, &filter)?;
         },
         ("check", Some(args)) => {
             let verbose       = args.is_present("verbose");
@@ -106,7 +135,7 @@ fn run() -> vpk::Result<()> {
 
             let package = Package::from_path(&path)?;
 
-            vpk::check(&package, verbose, stop_on_error)?;
+            check(&package, verbose, stop_on_error)?;
 
             if verbose {
                 println!("everything ok");
@@ -121,7 +150,7 @@ fn run() -> vpk::Result<()> {
 
             let package = Package::from_path(&path)?;
 
-            vpk::unpack(&package, outdir, &filter, verbose, check)?;
+            unpack(&package, outdir, &filter, verbose, check)?;
         },
         ("pack", Some(args)) => {
             let indir   = args.value_of("indir").unwrap_or(".");
@@ -178,7 +207,7 @@ fn run() -> vpk::Result<()> {
                 ArchiveOptions::MaxArchiveSize(std::i32::MAX as u32)
             };
 
-            vpk::pack_v1(&path, &indir, arch_opts, max_inline_size, alignment, verbose)?;
+            pack_v1(&path, &indir, arch_opts, max_inline_size, alignment, verbose)?;
         },
         ("stats", Some(args)) => {
             let human_readable = args.is_present("human-readable");
@@ -186,7 +215,7 @@ fn run() -> vpk::Result<()> {
 
             let package = Package::from_path(&path)?;
 
-            vpk::stats(&package, human_readable)?;
+            stats(&package, human_readable)?;
         },
         #[cfg(feature = "fuse")]
         ("mount", Some(args)) => {
@@ -197,7 +226,7 @@ fn run() -> vpk::Result<()> {
 
             let package = Package::from_path(&path)?;
 
-            vpk::mount(package, &mount_point, foreground, debug)?;
+            mount(package, &mount_point, foreground, debug)?;
         },
         ("", _) => {
             return Err(Error::Other(

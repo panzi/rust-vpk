@@ -11,8 +11,11 @@ use fuse::{Filesystem, FileType, Request, ReplyEntry, FileAttr, ReplyAttr, Reply
 use daemonize::{Daemonize, DaemonizeError};
 use libc::{ENOENT, EISDIR, EACCES, ENOTDIR, ENODATA, ERANGE, EINVAL, EIO, O_RDONLY};
 
-use crate::vpk::{self, Error, Package, Entry, entry::File, DIR_INDEX};
-use crate::vpk::util::{archive_path};
+use crate::entry::{Entry, File};
+use crate::consts::DIR_INDEX;
+use crate::package::Package;
+use crate::result::{Result, Error};
+use crate::util::{archive_path};
 
 struct Dir {
     children: HashMap<String, u64>,
@@ -88,7 +91,7 @@ fn make_time(mut time: i64, mut nsec: i64) -> SystemTime {
 }
 
 impl VPKFS {
-    pub fn new(package: Package) -> vpk::Result<Self> {
+    pub fn new(package: Package) -> Result<Self> {
         let path = package.archive_path(DIR_INDEX);
         let meta = match fs::metadata(&path) {
             Err(error) => return Err(Error::IOWithPath(error, path)),
@@ -169,7 +172,7 @@ impl VPKFS {
         Ok(vpkfs)
     }
 
-    fn init(&mut self, entries: HashMap<String, Entry>, parent_inode: u64, parent_entries: &mut HashMap<String, u64>) -> vpk::Result<()> {
+    fn init(&mut self, entries: HashMap<String, Entry>, parent_inode: u64, parent_entries: &mut HashMap<String, u64>) -> Result<()> {
         for (name, entry) in entries {
             let inode = self.next_inode;
             self.next_inode += 1;
@@ -513,7 +516,7 @@ impl std::convert::From<DaemonizeError> for Error {
     }
 }
 
-pub fn mount(package: Package, mount_point: impl AsRef<Path>, mut foreground: bool, debug: bool) -> vpk::Result<()> {
+pub fn mount(package: Package, mount_point: impl AsRef<Path>, mut foreground: bool, debug: bool) -> Result<()> {
     let mut options = vec![
         OsStr::new("fsname=vpkfs"),
         OsStr::new("subtype=vpkfs"),
