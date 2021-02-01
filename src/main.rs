@@ -15,13 +15,12 @@ impl From<clap::Error> for vpk::Error {
     }
 }
 
-fn get_filter(args: &clap::ArgMatches) -> Filter {
-    if let Some(filter) = args.values_of("paths") {
-        let paths: Vec<String> = filter.map(|name| name.to_owned()).collect();
-        if paths.is_empty() {
+fn get_filter<'a>(args: &'a clap::ArgMatches) -> Filter<'a> {
+    if let Some(paths) = args.values_of("paths") {
+        if paths.len() == 0 {
             Filter::None
         } else {
-            Filter::Paths(paths)
+            Filter::Paths(paths.collect())
         }
     } else {
         Filter::None

@@ -104,7 +104,7 @@ impl From<std::str::Utf8Error> for Error {
 pub type Result<T> = core::result::Result<T, Error>;
 
 #[derive(Debug)]
-pub enum Filter {
+pub enum Filter<'a> {
     None,
-    Paths(Vec<String>)
+    Paths(Vec<&'a str>)
 }
