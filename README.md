@@ -35,6 +35,6 @@ TODO
 * [x] stats
 * [x] read-only fuse filesystem
 * [ ] maybe update command?
-* [x] better help message
-* [ ] code cleanups/refactorings
+* [ ] better help message
+* [x] code cleanups/refactorings
 * [ ] choose license (probably GPLv3)
