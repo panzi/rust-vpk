@@ -34,7 +34,8 @@ TODO
 * [x] pack
 * [x] stats
 * [x] read-only fuse filesystem
-* [ ] maybe update command?
+* [ ] read and evaluate md5 from VPK v2 files
+* [ ] read and evaluate signature from VPK v2 files? algorithm used is unknown
 * [x] better help message
 * [x] code cleanups/refactorings
 * [ ] choose license (probably GPLv3)

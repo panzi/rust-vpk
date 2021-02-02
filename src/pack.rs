@@ -552,6 +552,13 @@ pub fn pack_v1(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, options: 
         }
     }
 
+    let data_end_offset = match dirwriter.seek(SeekFrom::Current(0)) {
+        Ok(offset) => offset,
+        Err(error) => return Err(Error::IOWithPath(error, dirvpk_path.as_ref().to_path_buf())),
+    };
+
+    // TODO: VPK 2 support
+
     if options.verbose {
         println!("done");
     }
@@ -561,8 +568,11 @@ pub fn pack_v1(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, options: 
         prefix,
         version: 1,
         data_offset: dir_size as u32,
-        footer_offset: 0,
-        footer_size: 0,
+        index_size:  dir_size as u32 - v1_header_size as u32,
+        data_size:   (data_end_offset - dir_size as u64) as u32,
+        archive_md5_size: 0,
+        other_md5_size: 0,
+        signature_size: 0,
         entries,
     })
 }

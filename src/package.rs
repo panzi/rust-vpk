@@ -13,15 +13,33 @@ use crate::util::*;
 
 pub type Magic = [u8; 4];
 
+// pub struct ArchiveMd5 {
+//     archive_index: u32,
+//     offset:        u32,
+//     md4: [u8; 16],
+// }
+
 pub struct Package {
     pub(crate) dirpath: PathBuf,
     pub(crate) prefix: String,
 
-    pub(crate) version: u32,
-    pub(crate) data_offset: u32,
-    pub(crate) footer_offset: u32,
-    pub(crate) footer_size: u32,
+    pub(crate) version:          u32,
+    pub(crate) data_offset:      u32,
+    pub(crate) index_size:       u32,
+    pub(crate) data_size:        u32,
+    pub(crate) archive_md5_size: u32,
+    pub(crate) other_md5_size:   u32,
+    pub(crate) signature_size:   u32,
     pub(crate) entries: HashMap<String, Entry>,
+
+    // TODO: VPK2
+//    pub(crate) archive_md5s: Vec<ArchiveMd5>,
+//    pub(crate) index_md5:        [u8; 16],
+//    pub(crate) archive_md5s_md5: [u8; 16],
+//    pub(crate) unknown_md5:      [u8; 16],
+//
+//    pub(crate) public_key: Vec<u8>,
+//    pub(crate) signature:  Vec<u8>,
 }
 
 fn mkpath<'a>(mut entries: &'a mut HashMap<String, Entry>, dirpath: &str) -> Result<&'a mut HashMap<String, Entry>> {
@@ -103,25 +121,18 @@ impl Package {
         let index_size = read_u32(&mut file)?;
 
         let header_size: usize;
-        let (footer_offset, footer_size) = if version < 2 {
+        let mut data_size        = 0u32;
+        let mut archive_md5_size = 0u32;
+        let mut other_md5_size   = 0u32;
+        let mut signature_size   = 0u32;
+        if version < 2 {
             header_size = 4 * 3;
-            (0u32, 0u32)
         } else {
-            header_size = 4 * 3 + 4 * 4;
-            let footer_offset = read_u32(&mut file)?;
-            let expect_0      = read_u32(&mut file)?;
-            let footer_size   = read_u32(&mut file)?;
-            let expect_48     = read_u32(&mut file)?;
-
-            if expect_0 != 0 {
-                // unknown, usually always 0
-            }
-
-            if expect_48 != 48 {
-                // unknown, usually always 48
-            }
-
-            (footer_offset, footer_size)
+            header_size      = 4 * 3 + 4 * 4;
+            data_size        = read_u32(&mut file)?;
+            archive_md5_size = read_u32(&mut file)?;
+            other_md5_size   = read_u32(&mut file)?;
+            signature_size   = read_u32(&mut file)?;
         };
 
         let data_offset = header_size as u32 + index_size;
@@ -179,8 +190,11 @@ impl Package {
             prefix,
             version,
             data_offset,
-            footer_offset,
-            footer_size,
+            index_size,
+            data_size,
+            archive_md5_size,
+            other_md5_size,
+            signature_size,
             entries,
         })
     }
@@ -196,13 +210,28 @@ impl Package {
     }
 
     #[inline]
-    pub fn footer_offset(&self) -> u32 {
-        self.footer_offset
+    pub fn index_size(&self) -> u32 {
+        self.index_size
     }
 
     #[inline]
-    pub fn footer_size(&self) -> u32 {
-        self.footer_size
+    pub fn data_size(&self) -> u32 {
+        self.data_size
+    }
+
+    #[inline]
+    pub fn archive_md5_size(&self) -> u32 {
+        self.archive_md5_size
+    }
+
+    #[inline]
+    pub fn other_md5_size(&self) -> u32 {
+        self.other_md5_size
+    }
+
+    #[inline]
+    pub fn signature_size(&self) -> u32 {
+        self.signature_size
     }
 
     #[inline]
