@@ -85,6 +85,7 @@ fn run() -> Result<()> {
 
         .subcommand(SubCommand::with_name("check")
             .alias("c")
+            .arg(Arg::with_name("alignment").long("alignment").short("a").takes_value(true))
             .arg(Arg::with_name("verbose").long("verbose").short("v").takes_value(false))
             .arg(Arg::with_name("human-readable").long("human-readable").short("h").takes_value(false))
             .arg(Arg::with_name("stop-on-error").long("stop-on-error").takes_value(false))
@@ -149,6 +150,24 @@ fn run() -> Result<()> {
             let stop_on_error  = args.is_present("stop-on-error");
             let path           = args.value_of("package").unwrap();
             let filter         = Filter::new(args);
+            let alignment = if let Some(alignment) = args.value_of("alignment") {
+                if let Ok(align) = parse_size(alignment) {
+                    if align == 0 || align > std::u32::MAX as usize {
+                        return Err(Error::IllegalArgument {
+                            name: "--alignment",
+                            value: alignment.to_owned(),
+                        });
+                    }
+                    Some(align as u32)
+                } else {
+                    return Err(Error::IllegalArgument {
+                        name: "--alignment",
+                        value: alignment.to_owned(),
+                    });
+                }
+            } else {
+                None
+            };
 
             let package = Package::from_path(&path)?;
 
@@ -156,7 +175,8 @@ fn run() -> Result<()> {
                 verbose,
                 stop_on_error,
                 human_readable,
-                filter: filter.as_ref()
+                filter: filter.as_ref(),
+                alignment,
             })?;
 
             if verbose {

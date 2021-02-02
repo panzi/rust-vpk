@@ -10,10 +10,11 @@ use crate::consts::DIR_INDEX;
 use crate::util::format_size;
 
 pub struct CheckOptions<'a> {
-    pub verbose: bool,
-    pub stop_on_error: bool,
+    pub verbose:        bool,
+    pub stop_on_error:  bool,
     pub human_readable: bool,
-    pub filter: Option<&'a [&'a str]>,
+    pub filter:    Option<&'a [&'a str]>,
+    pub alignment: Option<u32>,
 }
 
 impl CheckOptions<'_> {
@@ -31,6 +32,7 @@ impl Default for CheckOptions<'_> {
             stop_on_error: false,
             human_readable: false,
             filter: None,
+            alignment: None,
         }
     }
 }
@@ -40,6 +42,7 @@ pub fn check(package: &Package, options: CheckOptions) -> Result<()> {
     let mut archs = ArchiveCache::for_reading(package.dirpath.to_path_buf(), package.prefix.to_string());
     let mut stdout = std::io::stdout();
     let mut faild_count = 0usize;
+    let alignment = options.alignment.unwrap_or(0);
 
     let fmt_size = if options.human_readable {
         |size: u64| format_size(size)
@@ -48,7 +51,11 @@ pub fn check(package: &Package, options: CheckOptions) -> Result<()> {
     };
 
     if options.verbose {
-        println!("Archive      Offset  Inline-Size  Archive-Size       CRC32  Filename");
+        if alignment > 0 {
+            println!("Archive      Offset  Align-Reminder  Inline-Size  Archive-Size       CRC32  Filename");
+        } else {
+            println!("Archive      Offset  Inline-Size  Archive-Size       CRC32  Filename");
+        }
     }
 
     let files = match options.filter {
@@ -61,14 +68,20 @@ pub fn check(package: &Package, options: CheckOptions) -> Result<()> {
     };
 
     for (path, file) in files {
+        let mut ok = true;
+        let reminder = if alignment > 0 { file.offset % alignment } else { 0 };
         if options.verbose {
             if file.archive_index == DIR_INDEX {
                 print!("    dir");
             } else {
                 print!("    {:03}", file.archive_index);
             }
-            print!("  {:>10}  {:>11}  {:>12}  0x{:08x}  {}... ",
-                file.offset, fmt_size(file.inline_size as u64), fmt_size(file.size as u64), file.crc32,
+            print!("  {:>10}", file.offset);
+            if alignment > 0 {
+                print!("  {:>14}", reminder);
+            }
+            print!("  {:>11}  {:>12}  0x{:08x}  {}... ",
+                fmt_size(file.inline_size as u64), fmt_size(file.size as u64), file.crc32,
                 path);
             let _ = stdout.flush();
         }
@@ -77,31 +90,59 @@ pub fn check(package: &Package, options: CheckOptions) -> Result<()> {
             digest.write(data);
             Ok(())
         }) {
-            faild_count += 1;
+            ok = false;
             if options.verbose {
-                println!("FAILED, {}", error);
+                print!("FAILED, {}", error);
             } else {
-                eprintln!("{}: {}", path, error);
+                eprint!("{}: {}", path, error);
             }
         } else {
             let sum = digest.sum32();
 
             if options.verbose {
-                if sum == file.crc32 {
-                    println!("OK");
-                } else {
-                    faild_count += 1;
-                    println!("FAILED, CRC32 sum missmatch, expected: 0x{:08x}, actual: 0x{:08x}", file.crc32, sum);
+                if sum != file.crc32 {
+                    ok = false;
+                    print!("FAILED, CRC32 sum missmatch, expected: 0x{:08x}, actual: 0x{:08x}",
+                        file.crc32, sum);
                 }
             } else if sum != file.crc32 {
-                faild_count += 1;
-                eprintln!("{}: CRC32 sum missmatch, expected: 0x{:08x}, actual: 0x{:08x}",
+                ok = false;
+                eprint!("{}: CRC32 sum missmatch, expected: 0x{:08x}, actual: 0x{:08x}",
                     path, file.crc32, sum);
             }
         }
 
-        if options.stop_on_error && faild_count > 0 {
-            return Err(Error::Other("package check failed".to_owned()));
+        if reminder != 0 {
+            if options.verbose {
+                if ok {
+                    print!("FAILED");
+                }
+                print!(", not aligned");
+            } else {
+                if ok {
+                    eprint!("{}: ", path);
+                } else {
+                    eprint!(", ");
+                }
+                eprint!("not aligned, remainder: {}", reminder);
+            }
+            ok = false;
+        }
+
+        if ok {
+            if options.verbose {
+                println!("OK");
+            }
+        } else {
+            if options.verbose {
+                println!();
+            } else {
+                eprintln!();
+            }
+            if options.stop_on_error {
+                return Err(Error::Other("package check failed".to_owned()));
+            }
+            faild_count += 1;
         }
     }
 
