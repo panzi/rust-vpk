@@ -1,7 +1,7 @@
 Rust-VPK
 ========
 
-A tool to list, and unpack VPKv1 and v2 files and to create VPKv1 files. (WIP)
+A tool to list, check, and unpack VPKv1 and v2 files and to create VPKv1 files. (WIP)
 
 Similar to [another tool](https://github.com/panzi/unvpk) I wrote, but this time
 in Rust instead of C++ (for the fun of it!).
