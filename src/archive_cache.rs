@@ -18,6 +18,26 @@ pub struct ArchiveCache {
 }
 
 impl ArchiveCache {
+    pub fn dirpath(&self) -> &PathBuf {
+        &self.dirpath
+    }
+
+    pub fn prefix(&self) -> &String {
+        &self.prefix
+    }
+
+    pub fn dir_open_options(&self) -> &fs::OpenOptions {
+        &self.dir_open_options
+    }
+
+    pub fn open_options(&self) -> &fs::OpenOptions {
+        &self.open_options
+    }
+
+    pub fn archives(&self) -> &HashMap<u16, fs::File> {
+        &self.archives
+    }
+
     pub fn new(dirpath: PathBuf, prefix: String, dir_open_options: fs::OpenOptions, open_options: fs::OpenOptions) -> ArchiveCache {
         ArchiveCache {
             dirpath,

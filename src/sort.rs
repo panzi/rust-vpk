@@ -33,7 +33,7 @@ impl TryFrom<&str> for SortKey {
     type Error = Error;
 
     fn try_from(value: &str) -> Result<SortKey> {
-        if value.eq_ignore_ascii_case("name") {
+        if value.eq_ignore_ascii_case("name") || value.eq_ignore_ascii_case("path") || value.eq_ignore_ascii_case("filename") {
             Ok(SortKey::Name)
         } else if value.eq_ignore_ascii_case("inline-size") {
             Ok(SortKey::InlineSize)

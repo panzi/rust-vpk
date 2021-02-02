@@ -8,12 +8,14 @@ use crate::sort::PHYSICAL_ORDER;
 use crate::archive_cache::ArchiveCache;
 use crate::package::Package;
 use crate::result::{Result, Error};
-use crate::util::vpk_path_to_fs;
+use crate::util::split_path;
+use crate::consts::DIR_INDEX;
 
 pub struct UnpackOptions<'a> {
-    pub filter: Option<&'a [&'a str]>,
-    pub verbose: bool,
-    pub check: bool,
+    pub filter:               Option<&'a [&'a str]>,
+    pub verbose:              bool,
+    pub check:                bool,
+    pub dirname_from_archive: bool,
 }
 
 impl UnpackOptions<'_> {
@@ -27,9 +29,10 @@ impl Default for UnpackOptions<'_> {
     #[inline]
     fn default() -> Self {
         Self {
-            filter: None,
-            verbose: false,
-            check: false,
+            filter:               None,
+            verbose:              false,
+            check:                false,
+            dirname_from_archive: false,
         }
     }
 }
@@ -44,7 +47,20 @@ pub fn unpack(package: &Package, outdir: impl AsRef<Path>, options: UnpackOption
     };
 
     for (path, file) in files {
-        let outpath = vpk_path_to_fs(&outdir, &path);
+        let mut outpath = outdir.as_ref().to_path_buf();
+
+        if options.dirname_from_archive {
+            if file.archive_index == DIR_INDEX {
+                outpath.push("dir");
+            } else {
+                outpath.push(format!("{:03}", file.archive_index));
+            }
+        }
+
+        for (_, item, _) in split_path(&path) {
+            outpath.push(item);
+        }
+
         if options.verbose {
             println!("writing {:?}", outpath);
         }

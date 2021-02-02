@@ -66,57 +66,194 @@ impl<'a> Filter<'a> {
     }
 }
 
-fn run() -> Result<()> {
-    let app = App::new("VPK Valve Packages")
-        .version("1.0")
-        .author("Mathias Panzenböck <grosser.meister.morti@gmx.net>")
+fn arg_human_readable<'a, 'b>() -> Arg<'a, 'b> {
+    Arg::with_name("human-readable")
+        .long("human-readable")
+        .short("h")
+        .takes_value(false)
+        .help("Print sizes like 1.0 K, 2.2 M, 4.1 G etc.")
+}
 
+fn arg_package<'a, 'b>() -> Arg<'a, 'b> {
+    Arg::with_name("package")
+        .index(1)
+        .required(true)
+        .value_name("PACKAGE")
+        .help("A file ending in _dir.vpk (e.g. pak01_dir.vpk)")
+}
+
+fn arg_paths<'a, 'b>() -> Arg<'a, 'b> {
+    Arg::with_name("paths")
+        .index(2)
+        .multiple(true)
+        .value_name("PATH")
+        .help("If given, only consider these files from the package.")
+}
+
+fn arg_verbose<'a, 'b>() -> Arg<'a, 'b> {
+    Arg::with_name("verbose")
+        .long("verbose")
+        .short("v")
+        .takes_value(false)
+        .help("Print verbose output.")
+}
+
+fn run() -> Result<()> {
+    let default_max_inline_size_str = format!("{}", DEFAULT_MAX_INLINE_SIZE);
+
+    let app = App::new("VPK - Valve Packages")
+        .version("1.0")
+        .author("Mathias Panzenböck <grosser.meister.morti@gmx.net>");
+
+    #[cfg(feature = "fuse")]
+    let app = app
+        .about("pack, list, unpack, check, mount VPK Valve packages");
+
+    #[cfg(not(feature = "fuse"))]
+    let app = app
+        .about("pack, list, unpack, check VPK Valve packages");
+
+    let app = app
         .subcommand(SubCommand::with_name("list")
             .alias("l")
-            .arg(Arg::with_name("sort").long("sort").short("s").takes_value(true))
-            .arg(Arg::with_name("human-readable").long("human-readable").short("h").takes_value(false))
-            .arg(Arg::with_name("package").index(1).required(true))
-            .arg(Arg::with_name("paths").index(2).multiple(true)))
+            .about("List content of a VPK v1/v2 package.")
+            .arg(Arg::with_name("sort")
+                .long("sort")
+                .short("s")
+                .takes_value(true)
+                .value_name("ORDER")
+                .help(
+                    "Sort order of list as comma separated keys:\n\
+                     \n\
+                     * path         - path of the file inside the package\n\
+                     * inline-size  - size of the data embedded in the index\n\
+                     * archive-size - size of the data in the actual archive\n\
+                     * full-size    - sum of the other two sizes\n\
+                     * offset       - offset inside of the archive\n\
+                     * archive      - archive where the file is stored\n\
+                     * index        - index of the file in the package index\n\
+                     \n\
+                     If you prepend the order with - you invert the sort order for that key. E.g.:\n\
+                     \n\
+                     vpk list --sort=-full-size,name")
+            )
+            .arg(arg_human_readable())
+            .arg(arg_package())
+            .arg(arg_paths()))
 
         .subcommand(SubCommand::with_name("stats")
             .alias("s")
-            .arg(Arg::with_name("human-readable").long("human-readable").short("h").takes_value(false))
-            .arg(Arg::with_name("package").index(1).required(true)))
+            .about("Print some statistics of a VPK v1/v2 package.")
+            .arg(arg_human_readable())
+            .arg(arg_package()))
 
         .subcommand(SubCommand::with_name("check")
             .alias("c")
-            .arg(Arg::with_name("alignment").long("alignment").short("a").takes_value(true))
-            .arg(Arg::with_name("verbose").long("verbose").short("v").takes_value(false))
-            .arg(Arg::with_name("human-readable").long("human-readable").short("h").takes_value(false))
-            .arg(Arg::with_name("stop-on-error").long("stop-on-error").takes_value(false))
-            .arg(Arg::with_name("package").index(1).required(true))
-            .arg(Arg::with_name("paths").index(2).multiple(true)))
+            .about("Check CRC32 sums of files in a VPK v1/v2 package.")
+            .arg(Arg::with_name("alignment")
+                .long("alignment")
+                .short("a")
+                .takes_value(true)
+                .value_name("ALIGNMENT")
+                .help("Assume alignment of file data in bytes and print the differentce to the real alignment."))
+            .arg(arg_verbose())
+            .arg(arg_human_readable())
+            .arg(Arg::with_name("stop-on-error")
+                .long("stop-on-error")
+                .takes_value(false)
+                .help("Stop on first error."))
+            .arg(arg_package())
+            .arg(arg_paths()))
 
         .subcommand(SubCommand::with_name("unpack")
             .alias("x")
-            .arg(Arg::with_name("outdir").long("outdir").short("o").takes_value(true))
-            .arg(Arg::with_name("verbose").long("verbose").short("v").takes_value(false))
-            .arg(Arg::with_name("check").long("check").short("c").takes_value(false))
-            .arg(Arg::with_name("package").index(1).required(true))
-            .arg(Arg::with_name("paths").index(2).multiple(true)))
+            .about("Extract files from a VPK v1/v2 package.")
+            .arg(arg_verbose())
+            .arg(Arg::with_name("outdir")
+                .long("outdir")
+                .short("o")
+                .value_name("OUTDIR")
+                .takes_value(true)
+                .help("Write files to OUTDIR instead of current directory."))
+            .arg(Arg::with_name("dirname-from-archive")
+                .long("dirname-from-archive")
+                .short("a")
+                .help(
+                    "Take directory names from the archives of the files.\n\
+                     Meaning the first level of generated directory names will be named \"000\", \"001\", \"002\", \"003\", ... and \"dir\"."))
+            .arg(Arg::with_name("check")
+                .long("check")
+                .short("c")
+                .takes_value(false)
+                .help("Check CRC32 sums while unpacking."))
+            .arg(arg_package())
+            .arg(arg_paths()))
 
         .subcommand(SubCommand::with_name("pack")
             .alias("p")
-            .arg(Arg::with_name("alignment").long("alignment").short("a").takes_value(true))
-            .arg(Arg::with_name("archive-from-dirname").long("archive-from-dirname").short("n").takes_value(false).conflicts_with("max-archive-size"))
-            .arg(Arg::with_name("max-archive-size").long("max-archive-size").short("s").takes_value(true))
-            .arg(Arg::with_name("max-inline-size").long("max-inline-size").short("x").takes_value(true))
-            .arg(Arg::with_name("verbose").long("verbose").short("v").takes_value(false))
-            .arg(Arg::with_name("package").index(1).required(true))
-            .arg(Arg::with_name("indir").index(2).required(true)));
+            .about("Create a VPK v1 package.")
+            .arg(Arg::with_name("alignment")
+                .long("alignment")
+                .short("a")
+                .takes_value(true)
+                .value_name("ALIGNMENT")
+                .help("Ensure that data in archives is aligned at given number of bytes."))
+            .arg(Arg::with_name("archive-from-dirname")
+                .long("archive-from-dirname")
+                .short("d")
+                .takes_value(false)
+                .conflicts_with("max-archive-size")
+                .help(
+                    "Take archive distribution from directory names.\n\
+                     Meaning the first level of directory names have to be named \"000\", \"001\", \"002\", \"003\", ... and \"dir\".\n\
+                     Conficts with: --max-archive-size"))
+            .arg(Arg::with_name("max-archive-size")
+                .long("max-archive-size")
+                .short("s")
+                .takes_value(true)
+                .value_name("SIZE")
+                .help(
+                    "Distribute files to archives by ensuring no archive is bigger than the given size.\n\
+                     Conflicts with: --archive-from-dirname"
+                ))
+            .arg(Arg::with_name("max-inline-size")
+                .long("max-inline-size")
+                .short("i")
+                .takes_value(true)
+                .value_name("SIZE")
+                .default_value(&default_max_inline_size_str)
+                .help("Maximum size of files that will be embedded in the index."))
+            .arg(arg_verbose())
+            .arg(arg_package())
+            .arg(Arg::with_name("indir")
+                .index(2)
+                .required(true)
+                .value_name("INDIR")
+                .help("Read files from this directory.")));
 
     #[cfg(feature = "fuse")]
     let app = app.subcommand(SubCommand::with_name("mount")
         .alias("m")
-        .arg(Arg::with_name("foreground").long("foreground").short("f").takes_value(false))
-        .arg(Arg::with_name("debug").long("debug").short("d").takes_value(false))
-        .arg(Arg::with_name("package").index(1).required(true))
-        .arg(Arg::with_name("mount-point").index(2).required(true)));
+        .about("Mount a VPK v1/v2 package as read-only filesystem.")
+        .long_about(
+            "Mount a VPK v1/v2 package as read-only filesystem.\n\
+             Use `fusermount -u <MOUNT-POINT>` to unmount again.")
+        .arg(Arg::with_name("foreground")
+            .long("foreground")
+            .short("f")
+            .takes_value(false)
+            .help("Keep process in foreground (i.e. don't daemonize)."))
+        .arg(Arg::with_name("debug")
+            .long("debug")
+            .short("d")
+            .takes_value(false)
+            .help("Add \"debug\" to FUSE options. Implies: --foreground"))
+        .arg(arg_package())
+        .arg(Arg::with_name("mount-point")
+            .index(2)
+            .required(true)
+            .value_name("MOUNT-POINT")
+            .help("Directory where filesystem will be mounted.")));
     
     let matches = app.get_matches();
 
@@ -184,18 +321,20 @@ fn run() -> Result<()> {
             }
         },
         ("unpack", Some(args)) => {
-            let outdir  = args.value_of("outdir").unwrap_or(".");
-            let verbose = args.is_present("verbose");
-            let check   = args.is_present("check");
-            let path    = args.value_of("package").unwrap();
-            let filter  = Filter::new(args);
+            let outdir               = args.value_of("outdir").unwrap_or(".");
+            let verbose              = args.is_present("verbose");
+            let check                = args.is_present("check");
+            let dirname_from_archive = args.is_present("dirname-from-archive");
+            let path                 = args.value_of("package").unwrap();
+            let filter               = Filter::new(args);
 
             let package = Package::from_path(&path)?;
 
             unpack(&package, outdir, UnpackOptions {
                 filter: filter.as_ref(),
                 verbose,
-                check
+                check,
+                dirname_from_archive,
             })?;
         },
         ("pack", Some(args)) => {
@@ -236,7 +375,7 @@ fn run() -> Result<()> {
                 ArchiveStrategy::ArchiveFromDirName
             } else if let Some(max_arch_size) = args.value_of("max-archive-size") {
                 if let Ok(size) = parse_size(max_arch_size) {
-                    if size > std::u32::MAX as usize {
+                    if size == 0 || size > std::u32::MAX as usize {
                         return Err(Error::IllegalArgument {
                             name: "--max-archive-size",
                             value: max_arch_size.to_owned(),

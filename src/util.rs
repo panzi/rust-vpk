@@ -70,16 +70,6 @@ pub fn format_size(size: u64) -> String {
     }
 }
 
-pub fn vpk_path_to_fs(prefix: impl AsRef<Path>, path: &str) -> PathBuf {
-    let mut buf = prefix.as_ref().to_path_buf();
-    
-    for (_, item, _) in split_path(path) {
-        buf.push(item);
-    }
-
-    buf
-}
-
 pub fn archive_path(dirpath: impl AsRef<Path>, prefix: &str, archive_index: u16) -> PathBuf {
     let mut path = dirpath.as_ref().to_path_buf();
     

@@ -28,10 +28,10 @@ impl Default for CheckOptions<'_> {
     #[inline]
     fn default() -> Self {
         Self {
-            verbose: false,
-            stop_on_error: false,
+            verbose:        false,
+            stop_on_error:  false,
             human_readable: false,
-            filter: None,
+            filter:    None,
             alignment: None,
         }
     }
@@ -39,7 +39,7 @@ impl Default for CheckOptions<'_> {
 
 pub fn check(package: &Package, options: CheckOptions) -> Result<()> {
     let mut digest = crc32::Digest::new(crc32::IEEE);
-    let mut archs = ArchiveCache::for_reading(package.dirpath.to_path_buf(), package.prefix.to_string());
+    let mut archs  = ArchiveCache::for_reading(package.dirpath.to_path_buf(), package.prefix.to_string());
     let mut stdout = std::io::stdout();
     let mut faild_count = 0usize;
     let alignment = options.alignment.unwrap_or(0);
