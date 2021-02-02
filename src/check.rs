@@ -52,7 +52,7 @@ pub fn check(package: &Package, options: CheckOptions) -> Result<()> {
 
     if options.verbose {
         if alignment > 0 {
-            println!("Archive      Offset  Align-Reminder  Inline-Size  Archive-Size       CRC32  Filename");
+            println!("Archive      Offset   Unaligned  Inline-Size  Archive-Size       CRC32  Filename");
         } else {
             println!("Archive      Offset  Inline-Size  Archive-Size       CRC32  Filename");
         }
@@ -78,7 +78,7 @@ pub fn check(package: &Package, options: CheckOptions) -> Result<()> {
             }
             print!("  {:>10}", file.offset);
             if alignment > 0 {
-                print!("  {:>14}", reminder);
+                print!("  {:>10}", reminder);
             }
             print!("  {:>11}  {:>12}  0x{:08x}  {}... ",
                 fmt_size(file.inline_size as u64), fmt_size(file.size as u64), file.crc32,
