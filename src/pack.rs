@@ -6,7 +6,7 @@ use std::io::{Read, Write, Seek, SeekFrom, BufWriter};
 use crc::{crc32, Hasher32};
 
 use crate::result::{Result, Error};
-use crate::consts::{DIR_INDEX, BUFFER_SIZE, VPK_MAGIC, DEFAULT_MAX_INLINE_SIZE};
+use crate::consts::{DIR_INDEX, BUFFER_SIZE, VPK_MAGIC, DEFAULT_MAX_INLINE_SIZE, V1_HEADER_SIZE};
 use crate::package::{Package, parse_path};
 use crate::entry::{Entry, File, Dir};
 use crate::io::{write_u32, write_str, write_file, transfer};
@@ -339,8 +339,6 @@ pub fn pack_v1(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, options: 
     }
     index_size += 1;
 
-    let v1_header_size = 4 + 4 + 4;
-    
     let mut pathbuf = String::new();
     let mut list = Vec::new();
     recursive_file_list(&mut entries, &mut pathbuf, &mut list);
@@ -369,7 +367,7 @@ pub fn pack_v1(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, options: 
         return Err(Error::Other(format!("index too large: {} > {}", index_size, std::i32::MAX)));
     }
 
-    let dir_size = v1_header_size + index_size;
+    let dir_size = V1_HEADER_SIZE + index_size;
 
     if options.verbose {
         println!("distributing files to archives...");
@@ -568,11 +566,19 @@ pub fn pack_v1(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, options: 
         prefix,
         version: 1,
         data_offset: dir_size as u32,
-        index_size:  dir_size as u32 - v1_header_size as u32,
+        index_size:  dir_size as u32 - V1_HEADER_SIZE as u32,
         data_size:   (data_end_offset - dir_size as u64) as u32,
         archive_md5_size: 0,
         other_md5_size: 0,
         signature_size: 0,
         entries,
+
+        // VPK 2
+        archive_md5s: Vec::new(),
+        index_md5: [0; 16],
+        archive_md5s_md5: [0; 16],
+        unknown_md5: [0; 16],
+        public_key: Vec::new(),
+        signature:  Vec::new(),
     })
 }

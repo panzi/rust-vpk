@@ -1,23 +1,47 @@
 use std::path::{Path, PathBuf};
 use std::fs;
-use std::io::{Read};
+use std::io::{Read, Seek, SeekFrom};
 use std::collections::HashMap;
 
 use crate::entry;
 use crate::entry::{Entry, File};
 use crate::result::{Result, Error};
 use crate::sort::{Order, sort};
-use crate::consts::VPK_MAGIC;
+use crate::consts::{VPK_MAGIC, V1_HEADER_SIZE, V2_HEADER_SIZE, ARCHIVE_MD5_SIZE};
 use crate::io::*;
 use crate::util::*;
 
 pub type Magic = [u8; 4];
+pub type Md5 = [u8; 16];
 
-// pub struct ArchiveMd5 {
-//     archive_index: u32,
-//     offset:        u32,
-//     md4: [u8; 16],
-// }
+pub struct ArchiveMd5 {
+    pub(crate) archive_index: u16,
+    pub(crate) offset:        u32,
+    pub(crate) size:          u32,
+    pub(crate) md5:           Md5,
+}
+
+impl ArchiveMd5 {
+    #[inline]
+    pub fn archive_index(&self) -> u16 {
+        self.archive_index
+    }
+
+    #[inline]
+    pub fn offset(&self) -> u32 {
+        self.offset
+    }
+
+    #[inline]
+    pub fn size(&self) -> u32 {
+        self.size
+    }
+
+    #[inline]
+    pub fn md5(&self) -> &Md5 {
+        &self.md5
+    }
+}
 
 pub struct Package {
     pub(crate) dirpath: PathBuf,
@@ -32,14 +56,14 @@ pub struct Package {
     pub(crate) signature_size:   u32,
     pub(crate) entries: HashMap<String, Entry>,
 
-    // TODO: VPK2
-//    pub(crate) archive_md5s: Vec<ArchiveMd5>,
-//    pub(crate) index_md5:        [u8; 16],
-//    pub(crate) archive_md5s_md5: [u8; 16],
-//    pub(crate) unknown_md5:      [u8; 16],
-//
-//    pub(crate) public_key: Vec<u8>,
-//    pub(crate) signature:  Vec<u8>,
+    // VPK2
+    pub(crate) archive_md5s: Vec<ArchiveMd5>,
+    pub(crate) index_md5:        Md5,
+    pub(crate) archive_md5s_md5: Md5,
+    pub(crate) unknown_md5:      Md5,
+
+    pub(crate) public_key: Vec<u8>,
+    pub(crate) signature:  Vec<u8>,
 }
 
 fn mkpath<'a>(mut entries: &'a mut HashMap<String, Entry>, dirpath: &str) -> Result<&'a mut HashMap<String, Entry>> {
@@ -104,6 +128,13 @@ impl Package {
     fn from_file(file: &mut fs::File, path: impl AsRef<Path>) -> Result<Package> {
         let (dirpath, prefix) = parse_path(&path)?;
 
+        let mut archive_md5s = Vec::new();
+        let mut index_md5:        Md5 = [0; 16];
+        let mut archive_md5s_md5: Md5 = [0; 16];
+        let mut unknown_md5:      Md5 = [0; 16];
+        let mut public_key = Vec::new();
+        let mut signature  = Vec::new();
+
         let mut file = std::io::BufReader::new(file);
         let mut magic = [0; 4];
         file.read_exact(&mut magic)?;
@@ -125,10 +156,11 @@ impl Package {
         let mut archive_md5_size = 0u32;
         let mut other_md5_size   = 0u32;
         let mut signature_size   = 0u32;
+
         if version < 2 {
-            header_size = 4 * 3;
+            header_size = V1_HEADER_SIZE;
         } else {
-            header_size      = 4 * 3 + 4 * 4;
+            header_size      = V2_HEADER_SIZE;
             data_size        = read_u32(&mut file)?;
             archive_md5_size = read_u32(&mut file)?;
             other_md5_size   = read_u32(&mut file)?;
@@ -185,6 +217,86 @@ impl Package {
             }
         }
 
+        if version > 1 {
+            let mut remaining = archive_md5_size as usize;
+            while remaining >= ARCHIVE_MD5_SIZE {
+                let archive_index = read_u32(&mut file)?;
+                let offset        = read_u32(&mut file)?;
+                let size          = read_u32(&mut file)?;
+                let mut md5 = [0; 16];
+
+                file.read_exact(&mut md5)?;
+
+                remaining -= ARCHIVE_MD5_SIZE;
+
+                if archive_index > std::u16::MAX as u32 {
+                    eprintln!("*** warning: archive_index in MD5 section too big: {} > {}",
+                        archive_index, std::u16::MAX);
+                    continue;
+                }
+
+                archive_md5s.push(ArchiveMd5 {
+                    archive_index: archive_index as u16,
+                    offset,
+                    size,
+                    md5,
+                });
+            }
+
+            archive_md5s.sort_by(|a, b| {
+                let cmp = a.archive_index.cmp(&b.archive_index);
+                if cmp == std::cmp::Ordering::Equal { a.offset.cmp(&b.offset) } else { cmp }
+            });
+
+            if remaining > 0 {
+                eprintln!("*** warning: {} bytes left after archive MD5 section", remaining);
+                file.seek(SeekFrom::Current(remaining as i64))?;
+            }
+
+            let mut remaining = other_md5_size;
+            if remaining >= 16 {
+                file.read_exact(&mut index_md5)?;
+                remaining -= 16;
+
+                if remaining >= 16 {
+                    file.read_exact(&mut archive_md5s_md5)?;
+                    remaining -= 16;
+
+                    if remaining >= 16 {
+                        file.read_exact(&mut unknown_md5)?;
+                        remaining -= 16;
+                    }
+                }
+            }
+
+            if remaining > 0 {
+                eprintln!("*** warning: {} bytes left after the other MD5 section", remaining);
+                file.seek(SeekFrom::Current(remaining as i64))?;
+            }
+
+            let mut remaining = signature_size;
+            if remaining >= 4 {
+                let pubkey_size = read_u32(&mut file)?;
+                remaining -= 4;
+                public_key.resize(pubkey_size as usize, 0);
+                file.read_exact(&mut public_key)?;
+                remaining -= pubkey_size;
+
+                if remaining >= 4 {
+                    let sig_size = read_u32(&mut file)?;
+                    remaining -= 4;
+                    signature.resize(sig_size as usize, 0);
+                    file.read_exact(&mut signature)?;
+                    remaining -= sig_size;
+                }
+            }
+
+            if remaining > 0 {
+                eprintln!("*** warning: {} bytes left after the signature section", remaining);
+                file.seek(SeekFrom::Current(remaining as i64))?;
+            }
+        }
+
         Ok(Package {
             dirpath,
             prefix,
@@ -196,6 +308,12 @@ impl Package {
             other_md5_size,
             signature_size,
             entries,
+            archive_md5s,
+            index_md5,
+            archive_md5s_md5,
+            unknown_md5,
+            public_key,
+            signature,
         })
     }
 
@@ -237,6 +355,56 @@ impl Package {
     #[inline]
     pub fn root(&self) -> &HashMap<String, Entry> {
         &self.entries
+    }
+
+    #[inline]
+    pub fn archive_md5s(&self) -> &Vec<ArchiveMd5> {
+        &self.archive_md5s
+    }
+
+    #[inline]
+    pub fn index_md5(&self) -> Option<&Md5> {
+        if self.other_md5_size >= ARCHIVE_MD5_SIZE as u32 {
+            Some(&self.index_md5)
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    pub fn archive_md5s_md5(&self) -> Option<&Md5> {
+        if self.other_md5_size >= ARCHIVE_MD5_SIZE as u32 * 2 {
+            Some(&self.archive_md5s_md5)
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    pub fn unknown_md5(&self) -> Option<&Md5> {
+        if self.other_md5_size >= ARCHIVE_MD5_SIZE as u32 * 3 {
+            Some(&self.unknown_md5)
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    pub fn public_key(&self) -> Option<&Vec<u8>> {
+        if self.signature_size >= 4 {
+            Some(&self.public_key)
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    pub fn signature(&self) -> Option<&Vec<u8>> {
+        if self.signature_size >= 4 + self.public_key.len() as u32 + 4 {
+            Some(&self.signature)
+        } else {
+            None
+        }
     }
 
     pub fn get<'a>(&'a self, path: &str) -> Option<&'a Entry> {
