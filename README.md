@@ -1,11 +1,13 @@
 Rust-VPK
 ========
 
-A tool to list, check, and unpack VPKv1 and v2 files and to create VPKv1 files.
-(WIP)
+A tool to create, list, check, and unpack VPK files files.
 
 Under Linux this tool can also be used to mount VPK packages as read-only FUSE
 filesystem.
+
+Checking and generating of cryptographic signatures is not supported, since
+there's no information out there on how to do that.
 
 Similar to [another tool](https://github.com/panzi/unvpk) I wrote, but this time
 in Rust instead of C++ (for the fun of it!).
@@ -37,6 +39,7 @@ TODO
 * [x] unpack
 * [x] pack
 * [x] stats
+* [ ] more stats for v2 packages
 * [x] read-only fuse filesystem
 * [x] read and evaluate md5 from VPK v2 files
 * [ ] read and evaluate signature from VPK v2 files? algorithm used is unknown
