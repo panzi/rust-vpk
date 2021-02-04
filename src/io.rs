@@ -26,7 +26,7 @@ pub(crate) fn read_str<'a>(file: &mut impl BufRead, mut buffer: &'a mut Vec<u8>)
 
     match buffer.last() {
         Some(0) => { buffer.pop(); }
-        _ => { return Err(Error::UnexpectedEOF); }
+        _ => { return Err(Error::unexpected_eof()); }
     }
 
     Ok(std::str::from_utf8(buffer)?)
@@ -48,7 +48,7 @@ where R: Read, R: Seek {
 
     if terminator != TERMINATOR {
         let offset = file.seek(SeekFrom::Current(0))? - 1;
-        return Err(Error::IllegalTerminator { terminator, offset });
+        return Err(Error::illegal_terminator(terminator, offset));
     }
 
     file.read_exact(&mut preload)?;

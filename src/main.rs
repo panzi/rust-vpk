@@ -22,11 +22,11 @@ use crate::list::{list, ListOptions};
 use crate::stats::stats;
 use crate::check::{check, CheckOptions};
 use crate::unpack::{unpack, UnpackOptions};
-use crate::pack::{pack_v1, PackOptions};
+use crate::pack::{pack, PackOptions};
 use crate::package::Package;
 
 use crate::sort::{parse_order, DEFAULT_ORDER};
-use crate::consts::DEFAULT_MAX_INLINE_SIZE;
+use crate::consts::{DEFAULT_MAX_INLINE_SIZE, DEFAULT_MD5_CHUNK_SIZE};
 use crate::result::{Error, Result};
 use crate::pack::ArchiveStrategy;
 use crate::util::parse_size;
@@ -36,7 +36,7 @@ use crate::mount::{mount, MountOptions};
 
 impl From<clap::Error> for crate::result::Error {
     fn from(error: clap::Error) -> Self {
-        crate::result::Error::Other(error.message)
+        crate::result::Error::other(error.message)
     }
 }
 
@@ -290,17 +290,17 @@ fn run() -> Result<()> {
             let alignment = if let Some(alignment) = args.value_of("alignment") {
                 if let Ok(align) = parse_size(alignment) {
                     if align == 0 || align > std::u32::MAX as usize {
-                        return Err(Error::IllegalArgument {
-                            name: "--alignment",
-                            value: alignment.to_owned(),
-                        });
+                        return Err(Error::illegal_argument(
+                            "--alignment",
+                            alignment
+                        ));
                     }
                     Some(align as u32)
                 } else {
-                    return Err(Error::IllegalArgument {
-                        name: "--alignment",
-                        value: alignment.to_owned(),
-                    });
+                    return Err(Error::illegal_argument(
+                        "--alignment",
+                        alignment
+                    ));
                 }
             } else {
                 None
@@ -344,17 +344,17 @@ fn run() -> Result<()> {
             let max_inline_size = if let Some(inline_size) = args.value_of("max-inline-size") {
                 if let Ok(size) = parse_size(inline_size) {
                     if size > std::u16::MAX as usize {
-                        return Err(Error::IllegalArgument {
-                            name: "--max-inline-size",
-                            value: inline_size.to_owned(),
-                        });
+                        return Err(Error::illegal_argument(
+                            "--max-inline-size",
+                            inline_size
+                        ));
                     }
                     size as u16
                 } else {
-                    return Err(Error::IllegalArgument {
-                        name: "--max-inline-size",
-                        value: inline_size.to_owned(),
-                    });
+                    return Err(Error::illegal_argument(
+                        "--max-inline-size",
+                        inline_size
+                    ));
                 }
             } else {
                 DEFAULT_MAX_INLINE_SIZE
@@ -363,10 +363,10 @@ fn run() -> Result<()> {
                 if let Ok(alignment) = parse_size(alignment) {
                     alignment
                 } else {
-                    return Err(Error::IllegalArgument {
-                        name: "--alignment",
-                        value: alignment.to_owned(),
-                    });
+                    return Err(Error::illegal_argument(
+                        "--alignment",
+                        alignment
+                    ));
                 }
             } else {
                 1
@@ -376,23 +376,30 @@ fn run() -> Result<()> {
             } else if let Some(max_arch_size) = args.value_of("max-archive-size") {
                 if let Ok(size) = parse_size(max_arch_size) {
                     if size == 0 || size > std::u32::MAX as usize {
-                        return Err(Error::IllegalArgument {
-                            name: "--max-archive-size",
-                            value: max_arch_size.to_owned(),
-                        });
+                        return Err(Error::illegal_argument(
+                            "--max-archive-size",
+                            max_arch_size
+                        ));
                     }
                     ArchiveStrategy::MaxArchiveSize(size as u32)
                 } else {
-                    return Err(Error::IllegalArgument {
-                        name: "--max-archive-size",
-                        value: max_arch_size.to_owned(),
-                    });
+                    return Err(Error::illegal_argument(
+                        "--max-archive-size",
+                        max_arch_size
+                    ));
                 }
             } else {
                 ArchiveStrategy::default()
             };
 
-            pack_v1(&path, &indir, PackOptions { strategy, max_inline_size, alignment, verbose })?;
+            pack(&path, &indir, PackOptions {
+                version: 1, // TODO
+                md5_chunk_size: DEFAULT_MD5_CHUNK_SIZE, // TODO
+                strategy,
+                max_inline_size,
+                alignment,
+                verbose
+            })?;
         },
         ("stats", Some(args)) => {
             let human_readable = args.is_present("human-readable");
@@ -414,13 +421,13 @@ fn run() -> Result<()> {
             mount(package, &mount_point, MountOptions { foreground, debug })?;
         },
         ("", _) => {
-            return Err(Error::Other(
+            return Err(Error::other(
                 "subcommand required\n\
                  For more information try --help".to_owned()
             ));
         },
         (cmd, _) => {
-            return Err(Error::Other(format!(
+            return Err(Error::other(format!(
                 "unknown subcommand: {}\n\
                  For more information try --help",
                  cmd

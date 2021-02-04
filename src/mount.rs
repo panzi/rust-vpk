@@ -94,12 +94,12 @@ impl VPKFS {
     pub fn new(package: Package) -> Result<Self> {
         let path = package.archive_path(DIR_INDEX);
         let meta = match fs::metadata(&path) {
-            Err(error) => return Err(Error::IOWithPath(error, path)),
+            Err(error) => return Err(Error::io_with_path(error, path)),
             Ok(meta) => meta,
         };
 
         let dirpath = match package.dirpath.canonicalize() {
-            Err(error) => return Err(Error::IOWithPath(error, package.dirpath)),
+            Err(error) => return Err(Error::io_with_path(error, package.dirpath)),
             Ok(dirpath) => dirpath,
         };
 
@@ -131,7 +131,9 @@ impl VPKFS {
         let mut sum_size = 0u64;
         for (archive_index, file) in &vpkfs.archives {
             let meta = match file.metadata() {
-                Err(error) => return Err(Error::IOWithPath(error, archive_path(&vpkfs.dirpath, &vpkfs.prefix, *archive_index))),
+                Err(error) => return Err(Error::io_with_path(
+                    error,
+                    archive_path(&vpkfs.dirpath, &vpkfs.prefix, *archive_index))),
                 Ok(meta) => meta,
             };
             sum_size += meta.len();
@@ -517,7 +519,7 @@ impl<'a> Filesystem for VPKFS {
 
 impl std::convert::From<DaemonizeError> for Error {
     fn from(error: DaemonizeError) -> Self {
-        Error::Other(format!("{}", error))
+        Error::other(format!("{}", error))
     }
 }
 
@@ -546,7 +548,7 @@ impl Default for MountOptions {
 pub fn mount(package: Package, mount_point: impl AsRef<Path>, options: MountOptions) -> Result<()> {
     let mount_point = match mount_point.as_ref().canonicalize() {
         Ok(mount_point) => mount_point,
-        Err(error) => return Err(Error::IOWithPath(error, mount_point.as_ref().to_owned())),
+        Err(error) => return Err(Error::io_with_path(error, mount_point)),
     };
 
     let mut fuse_options = vec![

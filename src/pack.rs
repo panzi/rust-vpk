@@ -6,7 +6,7 @@ use std::io::{Read, Write, Seek, SeekFrom, BufWriter};
 use crc::{crc32, Hasher32};
 
 use crate::result::{Result, Error};
-use crate::consts::{DIR_INDEX, BUFFER_SIZE, VPK_MAGIC, DEFAULT_MAX_INLINE_SIZE, V1_HEADER_SIZE};
+use crate::consts::{DIR_INDEX, BUFFER_SIZE, VPK_MAGIC, DEFAULT_MAX_INLINE_SIZE, V1_HEADER_SIZE, DEFAULT_MD5_CHUNK_SIZE};
 use crate::package::{Package, parse_path};
 use crate::entry::{Entry, File, Dir};
 use crate::io::{write_u32, write_str, write_file, transfer};
@@ -25,6 +25,8 @@ impl Default for ArchiveStrategy {
 }
 
 pub struct PackOptions {
+    pub version: u32,
+    pub md5_chunk_size: u32,
     pub strategy: ArchiveStrategy,
     pub max_inline_size: u16,
     pub alignment: usize,
@@ -42,6 +44,8 @@ impl Default for PackOptions {
     #[inline]
     fn default() -> Self {
         Self {
+            version: 1,
+            md5_chunk_size: DEFAULT_MD5_CHUNK_SIZE,
             strategy: ArchiveStrategy::default(),
             max_inline_size: DEFAULT_MAX_INLINE_SIZE,
             alignment: 1,
@@ -95,12 +99,12 @@ impl Gather {
     fn gather_files(&mut self, entries: &mut HashMap<String, Entry>, archive_index: u16, dirpath: &Path, root: bool, verbose: bool) -> Result<()> {
         let dirents = match read_dir(dirpath) {
             Ok(dirents) => dirents,
-            Err(error) => return Err(Error::IOWithPath(error, dirpath.to_path_buf())),
+            Err(error) => return Err(Error::io_with_path(error, dirpath)),
         };
         for dirent in dirents {
             let dirent = match dirent {
                 Ok(dirent) => dirent,
-                Err(error) => return Err(Error::IOWithPath(error, dirpath.to_path_buf())),
+                Err(error) => return Err(Error::io_with_path(error, dirpath)),
             };
             if verbose {
                 println!("scanning {:?}", dirent.path());
@@ -109,7 +113,7 @@ impl Gather {
             if let Some(name) = os_name.to_str() {
                 let file_type = match dirent.file_type() {
                     Ok(file_type) => file_type,
-                    Err(error) => return Err(Error::IOWithPath(error, dirent.path())),
+                    Err(error) => return Err(Error::io_with_path(error, dirent.path())),
                 };
                 if file_type.is_dir() {
                     let mut dir = Dir {
@@ -118,10 +122,10 @@ impl Gather {
                     self.gather_files(&mut dir.children, archive_index, &dirent.path(), false, verbose)?;
                     entries.insert(name.to_owned(), Entry::Dir(dir));
                 } else if root {
-                    return Err(Error::Other(format!("All files must be in sub-directories: {:?}", dirent.path())));
+                    return Err(Error::other("all files must be in sub-directories").with_path(dirent.path()));
                 } else if let Some(dot_index) = name.rfind('.') {
                     if dot_index == 0 || dot_index + 1 == name.len() {
-                        return Err(Error::Other(format!("Filenames must be of format \"NAME.EXT\": {:?}", dirent.path())));
+                        return Err(Error::other("filenames must be of format \"NAME.EXT\"").with_path(dirent.path()));
                     }
 
                     let ext = &name[dot_index + 1..];
@@ -131,16 +135,16 @@ impl Gather {
 
                     let mut reader = match fs::File::open(dirent.path()) {
                         Ok(reader) => reader,
-                        Err(error) => return Err(Error::IOWithPath(error, dirent.path())),
+                        Err(error) => return Err(Error::io_with_path(error, dirent.path())),
                     };
                     let meta = match reader.metadata() {
                         Ok(meta) => meta,
-                        Err(error) => return Err(Error::IOWithPath(error, dirent.path())),
+                        Err(error) => return Err(Error::io_with_path(error, dirent.path())),
                     };
                     let size = meta.len();
 
                     if size > std::i32::MAX as u64 {
-                        return Err(Error::Other(format!("File too big {} > {}: {:?}", size, std::i32::MAX, dirent.path())));
+                        return Err(Error::other(format!("file too big {} > {}", size, std::i32::MAX)).with_path(dirent.path()));
                     }
 
                     let mut size = size as u32;
@@ -153,7 +157,7 @@ impl Gather {
                         size = 0;
                         preload.resize(inline_size as usize, 0);
                         if let Err(error) = reader.read_exact(&mut preload) {
-                            return Err(Error::IOWithPath(error, dirent.path()));
+                            return Err(Error::io_with_path(error, dirent.path()));
                         }
                         self.digest.write(&preload);
                     } else {
@@ -161,7 +165,7 @@ impl Gather {
                         inline_size = 0;
                         while remain >= BUFFER_SIZE {
                             if let Err(error) = reader.read_exact(&mut self.buf) {
-                                return Err(Error::IOWithPath(error, dirent.path()));
+                                return Err(Error::io_with_path(error, dirent.path()));
                             }
                             self.digest.write(&self.buf);
                             remain -= BUFFER_SIZE;
@@ -169,7 +173,7 @@ impl Gather {
                         if remain > 0 {
                             let buf = &mut self.buf[..remain];
                             if let Err(error) = reader.read_exact(buf) {
-                                return Err(Error::IOWithPath(error, dirent.path()));
+                                return Err(Error::io_with_path(error, dirent.path()));
                             }
                             self.digest.write(buf);
                         }
@@ -187,10 +191,10 @@ impl Gather {
                     };
                     entries.insert(name.to_owned(), Entry::File(file));
                 } else {
-                    return Err(Error::Other(format!("Filenames must be of format \"NAME.EXT\": {:?}", dirent.path())));
+                    return Err(Error::other("filenames must be of format \"NAME.EXT\"").with_path(dirent.path()));
                 }
             } else {
-                return Err(Error::Other(format!("Cannot handle filename: {:?}", dirent.path())));
+                return Err(Error::other("cannot handle filename").with_path(dirent.path()));
             }
         }
 
@@ -269,7 +273,7 @@ fn write_dir(extmap: &HashMap<&str, HashMap<&str, Vec<&Item>>>, dirvpk_path: imp
 }
 
 // TODO: more grouping/file order options?
-pub fn pack_v1(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, options: PackOptions) -> Result<Package> {
+pub fn pack(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, options: PackOptions) -> Result<Package> {
     let (dirpath, prefix) = parse_path(&dirvpk_path)?;
 
     let mut entries = HashMap::new();
@@ -283,16 +287,16 @@ pub fn pack_v1(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, options: 
         ArchiveStrategy::ArchiveFromDirName => {
             let dirents = match read_dir(indir.as_ref()) {
                 Ok(dirents) => dirents,
-                Err(error) => return Err(Error::IOWithPath(error, dirpath.to_path_buf())),
+                Err(error) => return Err(Error::io_with_path(error, dirpath)),
             };
             for dirent in dirents {
                 let dirent = match dirent {
                     Ok(dirent) => dirent,
-                    Err(error) => return Err(Error::IOWithPath(error, dirpath.to_path_buf())),
+                    Err(error) => return Err(Error::io_with_path(error, dirpath)),
                 };
                 let file_type = match dirent.file_type() {
                     Ok(file_type) => file_type,
-                    Err(error) => return Err(Error::IOWithPath(error, dirent.path())),
+                    Err(error) => return Err(Error::io_with_path(error, dirent.path())),
                 };
                 if file_type.is_dir() {
                     if let Some(name) = dirent.file_name().to_str() {
@@ -364,7 +368,10 @@ pub fn pack_v1(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, options: 
     let index_size = index_size;
 
     if index_size > std::i32::MAX as usize {
-        return Err(Error::Other(format!("index too large: {} > {}", index_size, std::i32::MAX)));
+        return Err(Error::other(format!(
+                "index too large: {} > {}",
+                index_size, std::i32::MAX)).
+            with_path(dirvpk_path));
     }
 
     let dir_size = V1_HEADER_SIZE + index_size;
@@ -391,7 +398,7 @@ pub fn pack_v1(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, options: 
                         if archive_index == DIR_INDEX {
                             archive_index = 0;
                         } else if archive_index == 999 {
-                            return Err(Error::Other(format!("too many archives")));
+                            return Err(Error::other(format!("too many archives")));
                         } else {
                             archive_index += 1;
                         }
@@ -457,16 +464,19 @@ pub fn pack_v1(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, options: 
 
     let mut dirwriter = match write_dir(&extmap, dirvpk_path.as_ref(), dir_size as u32, index_size as u32) {
         Ok(dirwriter) => dirwriter,
-        Err(error) => return Err(Error::IOWithPath(error, dirvpk_path.as_ref().to_path_buf())),
+        Err(error) => return Err(Error::io_with_path(error, dirvpk_path)),
     };
 
     let actual_dir_size = match dirwriter.seek(SeekFrom::Current(0)) {
         Ok(offset) => offset,
-        Err(error) => return Err(Error::IOWithPath(error, dirvpk_path.as_ref().to_path_buf())),
+        Err(error) => return Err(Error::io_with_path(error, dirvpk_path)),
     };
 
     if actual_dir_size != dir_size as u64 {
-        return Err(Error::Other(format!("actual_dir_size {} != dir_size {}", actual_dir_size, dir_size)));
+        return Err(Error::other(format!(
+                "internal error: actual_dir_size {} != dir_size {}",
+                actual_dir_size, dir_size)).
+            with_path(dirvpk_path));
     }
 
     enum SelectWriter<'a> {
@@ -512,7 +522,7 @@ pub fn pack_v1(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, options: 
             }
 
             if let Err(error) = writer.seek(SeekFrom::Start(file.offset as u64)) {
-                return Err(Error::IOWithPath(error, archpath));
+                return Err(Error::io_with_path(error, archpath));
             }
 
             let mut fs_path = indir.as_ref().to_path_buf();
@@ -534,16 +544,16 @@ pub fn pack_v1(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, options: 
                     Ok(mut reader) => {
                         if file.inline_size > 0 {
                             if let Err(error) = reader.seek(SeekFrom::Start(file.inline_size as u64)) {
-                                return Err(Error::IOWithPath(error, fs_path));
+                                return Err(Error::io_with_path(error, fs_path));
                             }
                         }
 
                         if let Err(error) = transfer(&mut reader, writer, file.size as usize) {
-                            return Err(Error::IOWithPath(error, fs_path));
+                            return Err(Error::io_with_path(error, fs_path));
                         }
                     },
                     Err(error) => {
-                        return Err(Error::IOWithPath(error, fs_path));
+                        return Err(Error::io_with_path(error, fs_path));
                     }
                 }
             }
@@ -552,7 +562,7 @@ pub fn pack_v1(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, options: 
 
     let data_end_offset = match dirwriter.seek(SeekFrom::Current(0)) {
         Ok(offset) => offset,
-        Err(error) => return Err(Error::IOWithPath(error, dirvpk_path.as_ref().to_path_buf())),
+        Err(error) => return Err(Error::io_with_path(error, dirvpk_path)),
     };
 
     // TODO: VPK 2 support

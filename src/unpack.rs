@@ -66,7 +66,7 @@ pub fn unpack(package: &Package, outdir: impl AsRef<Path>, options: UnpackOption
         }
 
         if let Err(error) = fs::create_dir_all(outpath.parent().unwrap()) {
-            return Err(Error::IOWithPath(error, outpath));
+            return Err(Error::io_with_path(error, outpath));
         }
 
         match fs::File::create(&outpath) {
@@ -75,7 +75,7 @@ pub fn unpack(package: &Package, outdir: impl AsRef<Path>, options: UnpackOption
                     digest.reset();
                     archs.read_file_data(file, |data| {
                         if let Err(error) = writer.write_all(data) {
-                            return Err(Error::IOWithPath(error, outpath.to_path_buf()));
+                            return Err(Error::io_with_path(error, outpath.to_path_buf()));
                         }
                         digest.write(data);
                         Ok(())
@@ -83,19 +83,23 @@ pub fn unpack(package: &Package, outdir: impl AsRef<Path>, options: UnpackOption
 
                     let sum = digest.sum32();
                     if sum != file.crc32 {
-                        return Err(Error::Other(format!("{}: CRC32 sum missmatch, expected: 0x{:08x}, actual: 0x{:08x}",
+                        return Err(Error::other(format!(
+                            "{}: CRC32 sum missmatch, expected: 0x{:08x}, actual: 0x{:08x}",
                             path, file.crc32, sum)));
                     }
                 } else {
                     match archs.transfer(file, &mut writer) {
-                        Err(Error::IO(error)) => return Err(Error::IOWithPath(error, outpath)),
-                        Err(other) => return Err(other),
+                        Err(error) => return if error.path.is_none() {
+                            Err(error.with_path(outpath))
+                        } else {
+                            Err(error)
+                        },
                         Ok(()) => {}
                     }
                 }
             },
             Err(error) => {
-                return Err(Error::IOWithPath(error, outpath));
+                return Err(Error::io_with_path(error, outpath));
             }
         }
     }

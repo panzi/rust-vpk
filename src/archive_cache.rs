@@ -82,7 +82,7 @@ impl ArchiveCache {
                     self.archives.insert(index, reader);
                 },
                 Err(error) => {
-                    return Err(Error::IOWithPath(error, path));
+                    return Err(Error::io_with_path(error, path));
                 }
             }
         }
@@ -103,14 +103,14 @@ impl ArchiveCache {
             let reader = self.get(archive_index)?;
 
             if let Err(error) = reader.seek(SeekFrom::Start(file.offset as u64)) {
-                return Err(Error::IOWithPath(error, self.archive_path(archive_index)));
+                return Err(Error::io_with_path(error, self.archive_path(archive_index)));
             }
 
             let mut buf = [0u8; BUFFER_SIZE];
             let mut remain = file.size as usize;
             while remain >= BUFFER_SIZE {
                 if let Err(error) = reader.read_exact(&mut buf) {
-                    return Err(Error::IOWithPath(error, self.archive_path(archive_index)));
+                    return Err(Error::io_with_path(error, self.archive_path(archive_index)));
                 }
                 callback(&buf)?;
                 remain -= BUFFER_SIZE;
@@ -119,7 +119,7 @@ impl ArchiveCache {
             if remain > 0 {
                 let buf = &mut buf[..remain];
                 if let Err(error) = reader.read_exact(buf) {
-                    return Err(Error::IOWithPath(error, self.archive_path(archive_index)));
+                    return Err(Error::io_with_path(error, self.archive_path(archive_index)));
                 }
                 callback(&buf)?;
             }
@@ -136,7 +136,7 @@ impl ArchiveCache {
             let reader = self.get(archive_index)?;
 
             if let Err(error) = reader.seek(SeekFrom::Start(file.offset as u64)) {
-                return Err(Error::IOWithPath(error, self.archive_path(archive_index)));
+                return Err(Error::io_with_path(error, self.archive_path(archive_index)));
             }
 
             transfer(reader, writer, file.size as usize)?;

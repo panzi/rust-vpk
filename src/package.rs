@@ -81,7 +81,7 @@ fn mkpath<'a>(mut entries: &'a mut HashMap<String, Entry>, dirpath: &str) -> Res
                 entries = &mut dir.children;
             },
             Entry::File(_) => {
-                return Err(Error::EntryNotADir(path.to_owned()));
+                return Err(Error::entry_not_a_dir(path));
             },
         }
     }
@@ -94,20 +94,20 @@ pub(crate) fn parse_path(path: impl AsRef<Path>) -> Result<(PathBuf, String)> {
     let dirpath = if let Some(path) = path.parent() {
         path.to_owned()
     } else {
-        return Err(Error::Other(format!("could not get parent directory of: {:?}", path)));
+        return Err(Error::other("could not get parent directory").with_path(path));
     };
     let prefix = if let Some(name) = path.file_name() {
         if let Some(name) = name.to_str() {
             if let Some(name) = name.strip_suffix("_dir.vpk") {
                 name.to_owned()
             } else {
-                return Err(Error::Other(format!("Filename does not end in \"_dir.vpk\": {:?}", name)));
+                return Err(Error::other(format!("Filename does not end in \"_dir.vpk\": {:?}", name)).with_path(path));
             }
         } else {
-            return Err(Error::Other(format!("Filename contains invalid unicode bytes: {:?}", name)));
+            return Err(Error::other(format!("Filename contains invalid unicode bytes: {:?}", name)).with_path(path));
         }
     } else {
-        return Err(Error::Other(format!("could not get file name of: {:?}", path)));
+        return Err(Error::other("could not get file name of path").with_path(path));
     };
 
     Ok((dirpath, prefix))
@@ -118,10 +118,13 @@ impl Package {
         match fs::File::open(&path) {
             Ok(mut file) => match Self::from_file(&mut file, &path) {
                 Ok(package) => Ok(package),
-                Err(Error::IO(error)) => Err(Error::IOWithPath(error, path.as_ref().to_path_buf())),
-                Err(other) => Err(other),
+                Err(error) => if error.path.is_none() {
+                    Err(error.with_path(path))
+                } else {
+                    Err(error)
+                },
             }
-            Err(error) => Err(Error::IOWithPath(error, path.as_ref().to_path_buf())),
+            Err(error) => Err(Error::io_with_path(error, path.as_ref().to_path_buf())),
         }
     }
 
@@ -140,13 +143,13 @@ impl Package {
         file.read_exact(&mut magic)?;
 
         if magic != VPK_MAGIC {
-            return Err(Error::IllegalMagic(magic));
+            return Err(Error::illegal_magic(magic).with_path(path));
         }
 
         let version = read_u32(&mut file)?;
 
         if version == 0 || version > 2 {
-            return Err(Error::UnsupportedVersion(version));
+            return Err(Error::unsupported_version(version).with_path(path));
         }
 
         let index_size = read_u32(&mut file)?;
@@ -467,7 +470,7 @@ impl Package {
             let entry = self.get(path);
             match entry {
                 None => {
-                    return Err(Error::NoSuchEntry(path.to_owned()));
+                    return Err(Error::no_such_entry(path));
                 },
                 Some(Entry::Dir(dir)) => {
                     pathbuf.clear();

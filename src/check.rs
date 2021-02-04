@@ -140,7 +140,7 @@ pub fn check(package: &Package, options: CheckOptions) -> Result<()> {
                 eprintln!();
             }
             if options.stop_on_error {
-                return Err(Error::Other("package check failed".to_owned()));
+                return Err(Error::other("package check failed"));
             }
             faild_files_count += 1;
         }
@@ -163,7 +163,7 @@ pub fn check(package: &Package, options: CheckOptions) -> Result<()> {
                 if options.verbose {
                     println!("FAILED");
                 }
-                return Err(Error::IOWithPath(error, archs.archive_path(DIR_INDEX)));
+                return Err(Error::io_with_path(error, archs.archive_path(DIR_INDEX)));
             }
 
             let mut hasher = md5::Context::new();
@@ -173,7 +173,7 @@ pub fn check(package: &Package, options: CheckOptions) -> Result<()> {
                     if options.verbose {
                         println!("FAILED");
                     }
-                    return Err(Error::IOWithPath(error, archs.archive_path(DIR_INDEX)));
+                    return Err(Error::io_with_path(error, archs.archive_path(DIR_INDEX)));
                 }
                 remaining -= BUFFER_SIZE as u32;
                 hasher.consume(&buf);
@@ -185,7 +185,7 @@ pub fn check(package: &Package, options: CheckOptions) -> Result<()> {
                     if options.verbose {
                         println!("FAILED");
                     }
-                    return Err(Error::IOWithPath(error, archs.archive_path(DIR_INDEX)));
+                    return Err(Error::io_with_path(error, archs.archive_path(DIR_INDEX)));
                 }
                 hasher.consume(buf);
             }
@@ -199,7 +199,7 @@ pub fn check(package: &Package, options: CheckOptions) -> Result<()> {
                 }
                 failed_md5_count += 1;
                 if options.stop_on_error {
-                    return Err(Error::Other("package check failed".to_owned()));
+                    return Err(Error::other("package check failed"));
                 }
             }
 
@@ -214,7 +214,7 @@ pub fn check(package: &Package, options: CheckOptions) -> Result<()> {
                     if options.verbose {
                         println!("FAILED");
                     }
-                    return Err(Error::IOWithPath(error, archs.archive_path(DIR_INDEX)));
+                    return Err(Error::io_with_path(error, archs.archive_path(DIR_INDEX)));
                 }
 
                 let mut hasher = md5::Context::new();
@@ -224,7 +224,7 @@ pub fn check(package: &Package, options: CheckOptions) -> Result<()> {
                         if options.verbose {
                             println!("FAILED");
                         }
-                        return Err(Error::IOWithPath(error, archs.archive_path(DIR_INDEX)));
+                        return Err(Error::io_with_path(error, archs.archive_path(DIR_INDEX)));
                     }
                     remaining -= BUFFER_SIZE as u32;
                     hasher.consume(&buf);
@@ -236,7 +236,7 @@ pub fn check(package: &Package, options: CheckOptions) -> Result<()> {
                         if options.verbose {
                             println!("FAILED");
                         }
-                        return Err(Error::IOWithPath(error, archs.archive_path(DIR_INDEX)));
+                        return Err(Error::io_with_path(error, archs.archive_path(DIR_INDEX)));
                     }
                     hasher.consume(buf);
                 }
@@ -250,7 +250,7 @@ pub fn check(package: &Package, options: CheckOptions) -> Result<()> {
                     }
                     failed_md5_count += 1;
                     if options.stop_on_error {
-                        return Err(Error::Other("package check failed".to_owned()));
+                        return Err(Error::other("package check failed"));
                     }
                 }
             }
@@ -287,7 +287,7 @@ pub fn check(package: &Package, options: CheckOptions) -> Result<()> {
                 if options.verbose {
                     println!("FAILED");
                 }
-                return Err(Error::IOWithPath(error, archs.archive_path(DIR_INDEX)));
+                return Err(Error::io_with_path(error, archs.archive_path(DIR_INDEX)));
             }
 
             while remaining >= BUFFER_SIZE as u32 {
@@ -295,7 +295,7 @@ pub fn check(package: &Package, options: CheckOptions) -> Result<()> {
                     if options.verbose {
                         println!("FAILED");
                     }
-                    return Err(Error::IOWithPath(error, archs.archive_path(item.archive_index)));
+                    return Err(Error::io_with_path(error, archs.archive_path(item.archive_index)));
                 }
                 remaining -= BUFFER_SIZE as u32;
                 hasher.consume(&buf);
@@ -307,7 +307,7 @@ pub fn check(package: &Package, options: CheckOptions) -> Result<()> {
                     if options.verbose {
                         println!("FAILED");
                     }
-                    return Err(Error::IOWithPath(error, archs.archive_path(item.archive_index)));
+                    return Err(Error::io_with_path(error, archs.archive_path(item.archive_index)));
                 }
                 hasher.consume(buf);
             }
@@ -326,7 +326,7 @@ pub fn check(package: &Package, options: CheckOptions) -> Result<()> {
 
                 failed_md5_count += 1;
                 if options.stop_on_error {
-                    return Err(Error::Other("package check failed".to_owned()));
+                    return Err(Error::other("package check failed"));
                 }
             } else if options.verbose {
                 println!("OK");
@@ -337,7 +337,7 @@ pub fn check(package: &Package, options: CheckOptions) -> Result<()> {
     if faild_files_count == 0 && failed_md5_count == 0 {
         Ok(())
     } else {
-        Err(Error::Other(format!("CRC32 check failed for {} files and MD5 check failed for {} sections",
+        Err(Error::other(format!("CRC32 check failed for {} files and MD5 check failed for {} sections",
             faild_files_count, failed_md5_count)))
     }
 }

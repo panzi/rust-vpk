@@ -66,10 +66,7 @@ impl TryFrom<&str> for SortKey {
         } else if value.eq_ignore_ascii_case("-index") {
             Ok(SortKey::RevIndex)
         } else {
-            Err(Error::IllegalArgument {
-                name: "--sort",
-                value: value.to_owned()
-            })
+            Err(Error::illegal_argument("--sort", value))
         }
     }
 }
