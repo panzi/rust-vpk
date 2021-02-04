@@ -6,7 +6,7 @@ use crate::sort::PHYSICAL_ORDER;
 use crate::archive_cache::ArchiveCache;
 use crate::package::Package;
 use crate::result::{Result, Error};
-use crate::consts::{DIR_INDEX, BUFFER_SIZE, V2_HEADER_SIZE, ARCHIVE_MD5_SIZE};
+use crate::consts::{DIR_INDEX, BUFFER_SIZE, V2_HEADER_SIZE};
 use crate::util::format_size;
 
 pub struct CheckOptions<'a> {
@@ -152,7 +152,7 @@ pub fn check(package: &Package, options: CheckOptions) -> Result<()> {
         let mut buf = [0u8; BUFFER_SIZE];
         let arch = archs.get(DIR_INDEX)?;
 
-        if package.other_md5_size >= ARCHIVE_MD5_SIZE as u32 {
+        if package.other_md5_size >= 16 {
             if options.verbose {
                 println!();
                 print!("Checking MD5 sum of directory index... ");
@@ -201,12 +201,13 @@ pub fn check(package: &Package, options: CheckOptions) -> Result<()> {
                 if options.stop_on_error {
                     return Err(Error::other("package check failed"));
                 }
+            } else if options.verbose {
+                println!("OK");
             }
 
-            if package.other_md5_size >= ARCHIVE_MD5_SIZE as u32 * 2 {
+            if package.other_md5_size >= 16 * 2 {
                 if options.verbose {
-                    println!();
-                    print!("Checking MD5 sum of MD5 sum list... ");
+                    print!("Checking MD5 sum of MD5 sum list...    ");
                     let _ = stdout.flush();
                 }
 
@@ -252,84 +253,86 @@ pub fn check(package: &Package, options: CheckOptions) -> Result<()> {
                     if options.stop_on_error {
                         return Err(Error::other("package check failed"));
                     }
+                } else if options.verbose {
+                    println!("OK");
                 }
             }
-        } if options.verbose {
-            println!("OK");
         }
 
-        if options.verbose {
-            println!();
-            println!("Archive      Offset        Size  MD5 Sum");
-        }
-
-        for item in &package.archive_md5s {
-            let arch = archs.get(item.archive_index)?;
-            let mut remaining = item.size;
-            let mut hasher = md5::Context::new();
-
+        if !package.archive_md5s.is_empty() {
             if options.verbose {
-                if item.archive_index == DIR_INDEX {
-                    print!("    dir");
-                } else {
-                    print!("    {:03}", item.archive_index);
-                }
-
-                print!("  {:>10}  {:>10}  {:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}...  ",
-                    item.offset, fmt_size(item.size as u64),
-                    item.md5[0], item.md5[1], item.md5[2], item.md5[3], item.md5[4], item.md5[5], item.md5[6], item.md5[7], item.md5[8],
-                    item.md5[9], item.md5[10], item.md5[11], item.md5[12], item.md5[13], item.md5[14], item.md5[15], 
-                );
-                let _ = stdout.flush();
+                println!();
+                println!("Archive      Offset        Size  MD5 Sum");
             }
 
-            if let Err(error) = arch.seek(SeekFrom::Start(item.offset as u64)) {
+            for item in &package.archive_md5s {
+                let arch = archs.get(item.archive_index)?;
+                let mut remaining = item.size;
+                let mut hasher = md5::Context::new();
+
                 if options.verbose {
-                    println!("FAILED");
-                }
-                return Err(Error::io_with_path(error, archs.archive_path(DIR_INDEX)));
-            }
+                    if item.archive_index == DIR_INDEX {
+                        print!("    dir");
+                    } else {
+                        print!("    {:03}", item.archive_index);
+                    }
 
-            while remaining >= BUFFER_SIZE as u32 {
-                if let Err(error) = arch.read_exact(&mut buf) {
+                    print!("  {:>10}  {:>10}  {:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}...  ",
+                        item.offset, fmt_size(item.size as u64),
+                        item.md5[0], item.md5[1], item.md5[2], item.md5[3], item.md5[4], item.md5[5], item.md5[6], item.md5[7], item.md5[8],
+                        item.md5[9], item.md5[10], item.md5[11], item.md5[12], item.md5[13], item.md5[14], item.md5[15], 
+                    );
+                    let _ = stdout.flush();
+                }
+
+                if let Err(error) = arch.seek(SeekFrom::Start(item.offset as u64)) {
                     if options.verbose {
                         println!("FAILED");
                     }
-                    return Err(Error::io_with_path(error, archs.archive_path(item.archive_index)));
+                    return Err(Error::io_with_path(error, archs.archive_path(DIR_INDEX)));
                 }
-                remaining -= BUFFER_SIZE as u32;
-                hasher.consume(&buf);
-            }
 
-            if remaining > 0 {
-                let buf = &mut buf[..remaining as usize];
-                if let Err(error) = arch.read_exact(buf) {
+                while remaining >= BUFFER_SIZE as u32 {
+                    if let Err(error) = arch.read_exact(&mut buf) {
+                        if options.verbose {
+                            println!("FAILED");
+                        }
+                        return Err(Error::io_with_path(error, archs.archive_path(item.archive_index)));
+                    }
+                    remaining -= BUFFER_SIZE as u32;
+                    hasher.consume(&buf);
+                }
+
+                if remaining > 0 {
+                    let buf = &mut buf[..remaining as usize];
+                    if let Err(error) = arch.read_exact(buf) {
+                        if options.verbose {
+                            println!("FAILED");
+                        }
+                        return Err(Error::io_with_path(error, archs.archive_path(item.archive_index)));
+                    }
+                    hasher.consume(buf);
+                }
+
+                let sum = *hasher.compute();
+                if sum != item.md5 {
                     if options.verbose {
                         println!("FAILED");
+                    } else if item.archive_index == DIR_INDEX {
+                        eprintln!("archive dir at offset {} with size {}: MD5 sum missmatch",
+                            item.offset, item.size);
+                    } else {
+                        eprintln!("archive {:03} at offset {} with size {}: MD5 sum missmatch",
+                        item.archive_index, item.offset, item.size);
                     }
-                    return Err(Error::io_with_path(error, archs.archive_path(item.archive_index)));
-                }
-                hasher.consume(buf);
-            }
 
-            let sum = *hasher.compute();
-            if sum != item.md5 {
-                if options.verbose {
-                    println!("FAILED");
-                } else if item.archive_index == DIR_INDEX {
-                    eprintln!("archive dir at offset {} with size {}: MD5 sum missmatch",
-                        item.offset, item.size);
-                } else {
-                    eprintln!("archive {:03} at offset {} with size {}: MD5 sum missmatch",
-                    item.archive_index, item.offset, item.size);
+                    failed_md5_count += 1;
+                    if options.stop_on_error {
+                        return Err(Error::other("package check failed"));
+                    }
+                } else if options.verbose {
+                    println!("OK");
                 }
-
-                failed_md5_count += 1;
-                if options.stop_on_error {
-                    return Err(Error::other("package check failed"));
-                }
-            } else if options.verbose {
-                println!("OK");
             }
         }
     }

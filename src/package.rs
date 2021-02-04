@@ -221,6 +221,10 @@ impl Package {
         }
 
         if version > 1 {
+            if let Err(error) = file.seek(SeekFrom::Current(data_size as i64)) {
+                return Err(Error::io_with_path(error, path));
+            }
+
             let mut remaining = archive_md5_size as usize;
             while remaining >= ARCHIVE_MD5_SIZE {
                 let archive_index = read_u32(&mut file)?;

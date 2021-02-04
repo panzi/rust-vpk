@@ -116,7 +116,7 @@ fn run() -> Result<()> {
     let app = app
         .subcommand(SubCommand::with_name("list")
             .alias("l")
-            .about("List content of a VPK v1/v2 package.")
+            .about("List content of a VPK package.")
             .arg(Arg::with_name("sort")
                 .long("sort")
                 .short("s")
@@ -143,13 +143,13 @@ fn run() -> Result<()> {
 
         .subcommand(SubCommand::with_name("stats")
             .alias("s")
-            .about("Print some statistics of a VPK v1/v2 package.")
+            .about("Print some statistics of a VPK package.")
             .arg(arg_human_readable())
             .arg(arg_package()))
 
         .subcommand(SubCommand::with_name("check")
             .alias("c")
-            .about("Check CRC32 sums of files in a VPK v1/v2 package.")
+            .about("Check CRC32 sums of files in a VPK package.")
             .arg(Arg::with_name("alignment")
                 .long("alignment")
                 .short("a")
@@ -167,7 +167,7 @@ fn run() -> Result<()> {
 
         .subcommand(SubCommand::with_name("unpack")
             .alias("x")
-            .about("Extract files from a VPK v1/v2 package.")
+            .about("Extract files from a VPK package.")
             .arg(arg_verbose())
             .arg(Arg::with_name("outdir")
                 .long("outdir")
@@ -191,7 +191,20 @@ fn run() -> Result<()> {
 
         .subcommand(SubCommand::with_name("pack")
             .alias("p")
-            .about("Create a VPK v1 package.")
+            .about("Create a VPK package.")
+            .arg(Arg::with_name("version")
+                .long("version")
+                .short("V")
+                .takes_value(true)
+                .value_name("VERSION")
+                .default_value("1")
+                .help("VPK version. Only 1 and 2 (without signing) are supported."))
+            .arg(Arg::with_name("md5-chunk-size")
+                .long("md5-chunk-size")
+                .short("c")
+                .takes_value(true)
+                .value_name("SIZE")
+                .help("Size of chunks with MD5 checksums (VPK v2 only). [default: 1 M]"))
             .arg(Arg::with_name("alignment")
                 .long("alignment")
                 .short("a")
@@ -340,6 +353,46 @@ fn run() -> Result<()> {
         ("pack", Some(args)) => {
             let indir   = args.value_of("indir").unwrap_or(".");
             let path    = args.value_of("package").unwrap();
+            let version = if let Some(version) = args.value_of("version") {
+                if let Ok(value) = version.parse::<u32>() {
+                    if value < 1 || value > 2 {
+                        return Err(Error::illegal_argument(
+                            "--version",
+                            version
+                        ));
+                    }
+
+                    value
+                } else {
+                    return Err(Error::illegal_argument(
+                        "--version",
+                        version
+                    ));
+                }
+            } else {
+                1u32
+            };
+            let md5_chunk_size = if let Some(md5_chunk_size) = args.value_of("md5-chunk-size") {
+                if version < 2 {
+                    return Err(Error::other("--md5-chunk-size requires --version to be 2"));
+                }
+                if let Ok(size) = parse_size(md5_chunk_size) {
+                    if size == 0 || size > std::u32::MAX as usize {
+                        return Err(Error::illegal_argument(
+                            "--md5-chunk-size",
+                            md5_chunk_size
+                        ));
+                    }
+                    size as u32
+                } else {
+                    return Err(Error::illegal_argument(
+                        "--md5-chunk-size",
+                        md5_chunk_size
+                    ));
+                }
+            } else {
+                DEFAULT_MD5_CHUNK_SIZE
+            };
             let verbose = args.is_present("verbose");
             let max_inline_size = if let Some(inline_size) = args.value_of("max-inline-size") {
                 if let Ok(size) = parse_size(inline_size) {
@@ -393,8 +446,8 @@ fn run() -> Result<()> {
             };
 
             pack(&path, &indir, PackOptions {
-                version: 1, // TODO
-                md5_chunk_size: DEFAULT_MD5_CHUNK_SIZE, // TODO
+                version,
+                md5_chunk_size,
                 strategy,
                 max_inline_size,
                 alignment,

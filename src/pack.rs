@@ -1,3 +1,5 @@
+// TODO: make nicer
+
 use std::collections::{HashMap, HashSet};
 use std::path::{Path};
 use std::fs::{self, read_dir};
@@ -6,8 +8,8 @@ use std::io::{Read, Write, Seek, SeekFrom, BufWriter};
 use crc::{crc32, Hasher32};
 
 use crate::result::{Result, Error};
-use crate::consts::{DIR_INDEX, BUFFER_SIZE, VPK_MAGIC, DEFAULT_MAX_INLINE_SIZE, V1_HEADER_SIZE, DEFAULT_MD5_CHUNK_SIZE};
-use crate::package::{Package, parse_path};
+use crate::consts::{DIR_INDEX, BUFFER_SIZE, VPK_MAGIC, DEFAULT_MAX_INLINE_SIZE, V1_HEADER_SIZE, V2_HEADER_SIZE, DEFAULT_MD5_CHUNK_SIZE, ARCHIVE_MD5_SIZE};
+use crate::package::{Package, ArchiveMd5, Md5, parse_path};
 use crate::entry::{Entry, File, Dir};
 use crate::io::{write_u32, write_str, write_file, transfer};
 use crate::util::{split_path, archive_path};
@@ -232,7 +234,12 @@ fn recursive_file_list<'a>(entries: &'a mut HashMap<String, Entry>, pathbuf: &mu
     }
 }
 
-fn write_dir(extmap: &HashMap<&str, HashMap<&str, Vec<&Item>>>, dirvpk_path: impl AsRef<Path>, dir_size: u32, index_size: u32) -> std::io::Result<fs::File> {
+fn write_dir(
+        extmap: &HashMap<&str, HashMap<&str, Vec<&Item>>>,
+        dirvpk_path: impl AsRef<Path>,
+        version:    u32,
+        dir_size:   u32,
+        index_size: u32) -> std::io::Result<fs::File> {
     let mut dirfile = fs::File::create(dirvpk_path)?;
     let mut dirwriter = BufWriter::new(&mut dirfile);
 
@@ -241,8 +248,18 @@ fn write_dir(extmap: &HashMap<&str, HashMap<&str, Vec<&Item>>>, dirvpk_path: imp
 
     dirwriter.write_all(&VPK_MAGIC)?;
 
-    write_u32(&mut dirwriter, 1)?;
+    write_u32(&mut dirwriter, version)?;
     write_u32(&mut dirwriter, index_size)?;
+
+    if version > 1 {
+        // write placeholder
+        dirwriter.write_all(&[
+            0, 0, 0, 0, // data size
+            0, 0, 0, 0, // archive MD5 size
+            0, 0, 0, 0, // other MD5 size
+            0, 0, 0, 0, // signature size
+        ])?;
+    }
 
     for ext in &exts {
         write_str(&mut dirwriter, ext)?;
@@ -272,8 +289,67 @@ fn write_dir(extmap: &HashMap<&str, HashMap<&str, Vec<&Item>>>, dirvpk_path: imp
     Ok(dirfile)
 }
 
+fn write_sizes<W>(dirwriter: &mut W, data_size: u32, archive_md5_size: u32, other_md5_size: u32, signature_size: u32) -> std::io::Result<()>
+where W: Write, W: Seek {
+    dirwriter.seek(SeekFrom::Start(V1_HEADER_SIZE as u64))?;
+
+    write_u32(dirwriter, data_size)?;
+    write_u32(dirwriter, archive_md5_size)?;
+    write_u32(dirwriter, other_md5_size)?;
+    write_u32(dirwriter, signature_size)?;
+
+    Ok(())
+}
+
+fn write_archive_md5s(dirwriter: &mut impl Write, archive_md5s: &Vec<ArchiveMd5>) -> std::io::Result<()> {
+    for item in archive_md5s {
+        write_u32(dirwriter, item.archive_index as u32)?;
+        write_u32(dirwriter, item.offset)?;
+        write_u32(dirwriter, item.size)?;
+        dirwriter.write_all(&item.md5)?;
+    }
+    dirwriter.flush()
+}
+
+fn write_other_md5s(dirwriter: &mut impl Write, index_md5: &Md5, archive_md5s_md5: &Md5) -> std::io::Result<()> {
+    dirwriter.write_all(index_md5)?;
+    dirwriter.write_all(archive_md5s_md5)?;
+
+    Ok(())
+}
+
+fn calculate_md5<R>(reader: &mut R, offset: u64, size: u64) -> std::io::Result<Md5>
+where R: Read, R: Seek {
+
+    reader.seek(SeekFrom::Start(offset))?;
+
+    let mut buf = [0u8; BUFFER_SIZE];
+    let mut remaining = size as usize;
+    let mut hasher = md5::Context::new();
+
+    while remaining >= BUFFER_SIZE {
+        reader.read_exact(&mut buf)?;
+        hasher.consume(&buf);
+        remaining -= BUFFER_SIZE;
+    }
+
+    if remaining > 0 {
+        let buf = &mut buf[..remaining];
+        reader.read_exact(buf)?;
+        hasher.consume(buf);
+    }
+
+    Ok(*hasher.compute())
+}
+
 // TODO: more grouping/file order options?
 pub fn pack(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, options: PackOptions) -> Result<Package> {
+    let header_size = match options.version {
+        1 => V1_HEADER_SIZE,
+        2 => V2_HEADER_SIZE,
+        _ => return Err(Error::unsupported_version(options.version)),
+    };
+
     let (dirpath, prefix) = parse_path(&dirvpk_path)?;
 
     let mut entries = HashMap::new();
@@ -323,7 +399,7 @@ pub fn pack(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, options: Pac
     }
 
     if options.verbose {
-        print!("calculating index size... ");
+        println!("calculating index size... ");
         let _ = std::io::stdout().flush();
     }
 
@@ -374,7 +450,8 @@ pub fn pack(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, options: Pac
             with_path(dirvpk_path));
     }
 
-    let dir_size = V1_HEADER_SIZE + index_size;
+    let dir_size = header_size + index_size;
+    let index_size = index_size as u32;
 
     if options.verbose {
         println!("distributing files to archives...");
@@ -462,7 +539,12 @@ pub fn pack(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, options: Pac
         println!("writing index to file: {:?}", dirvpk_path.as_ref());
     }
 
-    let mut dirwriter = match write_dir(&extmap, dirvpk_path.as_ref(), dir_size as u32, index_size as u32) {
+    let mut dirwriter = match write_dir(
+            &extmap,
+            dirvpk_path.as_ref(),
+            options.version,
+            dir_size as u32,
+            index_size) {
         Ok(dirwriter) => dirwriter,
         Err(error) => return Err(Error::io_with_path(error, dirvpk_path)),
     };
@@ -479,17 +561,17 @@ pub fn pack(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, options: Pac
             with_path(dirvpk_path));
     }
 
-    enum SelectWriter<'a> {
+    enum SelectFile<'a> {
         Referenced(&'a mut fs::File),
         Contained(fs::File),
     }
 
-    impl SelectWriter<'_> {
+    impl SelectFile<'_> {
         #[inline]
         fn get(&mut self) -> &mut fs::File {
             match self {
-                SelectWriter::Referenced(writer) => writer,
-                SelectWriter::Contained(writer)  => writer,
+                SelectFile::Referenced(writer) => writer,
+                SelectFile::Contained(writer)  => writer,
             }
         }
     }
@@ -504,9 +586,9 @@ pub fn pack(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, options: Pac
 
         // TODO: is there a better way to do this?
         let mut writer = if archive_index == DIR_INDEX {
-            SelectWriter::Referenced(&mut dirwriter)
+            SelectFile::Referenced(&mut dirwriter)
         } else {
-            SelectWriter::Contained(fs::File::create(&archpath)?)
+            SelectFile::Contained(fs::File::create(&archpath)?)
         };
         let writer = writer.get();
 
@@ -565,29 +647,174 @@ pub fn pack(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, options: Pac
         Err(error) => return Err(Error::io_with_path(error, dirvpk_path)),
     };
 
+    let data_offset = dir_size as u32;
+    let data_size = (data_end_offset - data_offset as u64) as u32;
+    let signature_size = 0;
+
     // TODO: VPK 2 support
+    let mut archive_md5_size = 0;
+    let mut other_md5_size   = 0;
+    let mut archive_md5s     = Vec::new();
+    let mut index_md5        = [0; 16];
+    let mut archive_md5s_md5 = [0; 16];
+    let unknown_md5          = [0; 16];
+
+    if options.version > 1 {
+        let mut buf = Vec::with_capacity(options.md5_chunk_size as usize);
+        buf.resize(options.md5_chunk_size as usize, 0);
+
+        let mut dirreader = match fs::File::open(&dirvpk_path) {
+            Ok(file) => file,
+            Err(error) => return Err(Error::io_with_path(error, dirvpk_path)),
+        };
+
+        for archive_index in archmap.keys() {
+            let archive_index = *archive_index;
+            let archpath = archive_path(&dirpath, &prefix, archive_index);
+
+            if options.verbose {
+                println!("calculation MD5 sums of: {:?}", archpath);
+            }
+
+            let mut file = if archive_index == DIR_INDEX {
+                SelectFile::Referenced(&mut dirreader)
+            } else {
+                SelectFile::Contained(fs::File::open(&archpath)?)
+            };
+            let file = file.get();
+
+            let mut offset;
+            let mut remaining;
+
+            if archive_index == DIR_INDEX {
+                offset    = data_offset;
+                remaining = data_size;
+            } else {
+                let meta = match file.metadata() {
+                    Ok(meta) => meta,
+                    Err(error) => return Err(Error::io_with_path(error, archpath)),
+                };
+                if meta.len() > std::u32::MAX as u64 {
+                    return Err(Error::other(
+                            format!("file too big: {} > {}", meta.len(), std::u32::MAX))
+                        .with_path(archpath));
+                }
+                offset    = 0;
+                remaining = meta.len() as u32;
+            }
+
+            if let Err(error) = file.seek(SeekFrom::Start(offset as u64)) {
+                return Err(Error::io_with_path(error, archpath));
+            }
+
+            while remaining >= options.md5_chunk_size {
+                if let Err(error) = file.read_exact(&mut buf) {
+                    return Err(Error::io_with_path(error, archpath));
+                }
+
+                let md5 = *md5::compute(&buf);
+                archive_md5s.push(ArchiveMd5 {
+                    archive_index,
+                    offset,
+                    size: options.md5_chunk_size,
+                    md5,
+                });
+
+                offset    += options.md5_chunk_size;
+                remaining -= options.md5_chunk_size;
+            }
+
+            if remaining > 0 {
+                let buf = &mut buf[..remaining as usize];
+                if let Err(error) = file.read_exact(buf) {
+                    return Err(Error::io_with_path(error, archpath));
+                }
+
+                let md5 = *md5::compute(buf);
+                archive_md5s.push(ArchiveMd5 {
+                    archive_index,
+                    offset,
+                    size: remaining,
+                    md5,
+                });
+            }
+        }
+
+        let size = ARCHIVE_MD5_SIZE * archive_md5s.len();
+        if size > std::u32::MAX as usize {
+            return Err(Error::other(format!(
+                    "MD5 section is too big: {} > {}",
+                    size, std::u32::MAX))
+                .with_path(dirvpk_path));
+        }
+        archive_md5_size = size as u32;
+        if options.verbose {
+            println!("Writing archive MD5 sums...");
+        }
+
+        let mut writer = BufWriter::new(&mut dirwriter);
+
+        if let Err(error) = writer.seek(SeekFrom::Start(data_end_offset)) {
+            return Err(Error::io_with_path(error, dirvpk_path));
+        }
+
+        if let Err(error) = write_archive_md5s(&mut writer, &archive_md5s) {
+            return Err(Error::io_with_path(error, dirvpk_path));
+        }
+
+        if options.verbose {
+            println!("Calculating index MD5 sum...");
+        }
+
+        index_md5 = match calculate_md5(&mut dirreader, V2_HEADER_SIZE as u64, index_size as u64) {
+            Ok(md5) => md5,
+            Err(error) => return Err(Error::io_with_path(error, dirvpk_path)),
+        };
+
+        if options.verbose {
+            println!("Calculating MD5 sum section MD5 sum...");
+        }
+
+        archive_md5s_md5 = match calculate_md5(&mut dirreader, data_end_offset, archive_md5_size as u64) {
+            Ok(md5) => md5,
+            Err(error) => return Err(Error::io_with_path(error, dirvpk_path)),
+        };
+
+        if options.verbose {
+            println!("Writing these two MD5 sums...");
+        }
+
+        other_md5_size = (index_md5.len() + archive_md5s_md5.len()) as u32;
+        if let Err(error) = write_other_md5s(&mut writer, &index_md5, &archive_md5s_md5) {
+            return Err(Error::io_with_path(error, dirvpk_path));
+        }
+
+        if let Err(error) = write_sizes(&mut writer, data_size, archive_md5_size, other_md5_size, signature_size) {
+            return Err(Error::io_with_path(error, dirvpk_path));
+        }
+    }
 
     if options.verbose {
-        println!("done");
+        println!("Done");
     }
 
     Ok(Package {
         dirpath,
         prefix,
-        version: 1,
-        data_offset: dir_size as u32,
-        index_size:  dir_size as u32 - V1_HEADER_SIZE as u32,
-        data_size:   (data_end_offset - dir_size as u64) as u32,
-        archive_md5_size: 0,
-        other_md5_size: 0,
-        signature_size: 0,
+        version: options.version,
+        data_offset,
+        index_size,
+        data_size,
+        archive_md5_size,
+        other_md5_size,
+        signature_size,
         entries,
 
         // VPK 2
-        archive_md5s: Vec::new(),
-        index_md5: [0; 16],
-        archive_md5s_md5: [0; 16],
-        unknown_md5: [0; 16],
+        archive_md5s,
+        index_md5,
+        archive_md5s_md5,
+        unknown_md5,
         public_key: Vec::new(),
         signature:  Vec::new(),
     })
