@@ -38,8 +38,25 @@ TODO
 * [x] pack
 * [x] stats
 * [x] read-only fuse filesystem
-* [ ] read and evaluate md5 from VPK v2 files
+* [x] read and evaluate md5 from VPK v2 files
 * [ ] read and evaluate signature from VPK v2 files? algorithm used is unknown
 * [x] better help message
 * [x] code cleanups/refactorings
-* [ ] choose license (probably GPLv3)
+* [ ] more code cleanups/refactorings (mainly pack and check)
+* [x] choose license (probably GPLv3)
+
+GPLv3 License
+-------------
+
+rust-vpk is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+rust-vpk is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with rust-vpk.  If not, see <https://www.gnu.org/licenses/>.
