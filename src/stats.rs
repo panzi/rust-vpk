@@ -291,8 +291,8 @@ pub fn stats(package: &Package, human_readable: bool) -> Result<()> {
         ], &[Left, Right, Left]);
 
         let archive_md5s_offset = package.data_offset + package.data_size;
-        let other_md5s_offset   = archive_md5s_offset + package.other_md5_size;
-        let signature_offset    = other_md5s_offset   + package.signature_size;
+        let other_md5s_offset   = archive_md5s_offset + package.archive_md5_size;
+        let signature_offset    = other_md5s_offset   + package.other_md5_size;
 
         println!();
 
