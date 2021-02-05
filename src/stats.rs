@@ -16,7 +16,7 @@
 use std::fs;
 use std::collections::HashMap;
 
-use crate::package::Package;
+use crate::package::{Package, Md5};
 use crate::result::Result;
 use crate::consts::DIR_INDEX;
 use crate::entry::Entry;
@@ -232,6 +232,18 @@ impl<'a> Stats<'a> {
     }
 }
 
+fn format_md5(md5: Option<&Md5>) -> String {
+    if let Some(md5) = md5 {
+        format!(
+            "{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+            md5[0], md5[1], md5[2],  md5[ 3], md5[ 4], md5[ 5], md5[ 6], md5[ 7],
+            md5[8], md5[9], md5[10], md5[11], md5[12], md5[13], md5[14], md5[15],
+        )
+    } else {
+        "".to_owned()
+    }
+}
+
 pub fn stats(package: &Package, human_readable: bool) -> Result<()> {
     let stats = Stats::scan(package);
 
@@ -264,6 +276,23 @@ pub fn stats(package: &Package, human_readable: bool) -> Result<()> {
         vec!["Sum Archive File Size:", &fmt_size(stats.sum_archive_size)],
         vec!["Wasted Size:",           &wasted],
     ], &[Left, Right]);
+
+    if package.version > 1 {
+        println!();
+
+        print_headless_table(&[
+            vec!["Archive MD5s Size:", &fmt_size(package.archive_md5_size as u64)],
+            vec!["Other MD5s Size:",   &fmt_size(package.other_md5_size   as u64)],
+            vec!["Signature Size:",    &fmt_size(package.signature_size   as u64)],
+            vec![],
+            vec!["Archive MD5 Count:", &format!("{}", package.archive_md5s.len())],
+            vec!["Index MD5:",        if package.index_md5().is_some()        { "Yes" } else { "No" }, &format_md5(package.index_md5())],
+            vec!["Archive MD5s MD5:", if package.archive_md5s_md5().is_some() { "Yes" } else { "No" }, &format_md5(package.archive_md5s_md5())],
+            vec!["Unknown MD5:",      if package.unknown_md5().is_some()      { "Yes" } else { "No" }, &format_md5(package.unknown_md5())],
+            vec!["Public Key:",       if package.public_key().is_some()       { "Yes" } else { "No" }],
+            vec!["Signature:",        if package.signature().is_some()        { "Yes" } else { "No" }],
+        ], &[Left, Right, Left]);
+    }
 
     println!();
 
@@ -304,6 +333,11 @@ pub fn stats(package: &Package, human_readable: bool) -> Result<()> {
                 "".to_owned()
             },
             fmt_size(archstats.used_size),
+            if let Some(size) = archstats.file_size {
+                fmt_size(size - archstats.used_size)
+            } else {
+                "".to_owned()
+            }
         ];
 
         if let Some(io_error) = &archstats.io_error {
@@ -315,14 +349,14 @@ pub fn stats(package: &Package, human_readable: bool) -> Result<()> {
 
     if stats.error_count > 0 {
         print_table(
-            &["Archive", "File Count", "File With Data Count", "File Size", "Used Size", "IO Error"],
-            &[Right,     Right,        Right,                  Right,       Right,       Left],
+            &["Archive", "File Count", "File With Data Count", "File Size", "Used Size", "Wasted Size", "IO Error"],
+            &[Right,     Right,        Right,                  Right,       Right,       Right,         Left],
             &body
         );
     } else {
         print_table(
-            &["Archive", "File Count", "File With Data Count", "File Size", "Used Size"],
-            &[Right,     Right,        Right,                  Right,       Right],
+            &["Archive", "File Count", "File With Data Count", "File Size", "Used Size", "Wasted Size"],
+            &[Right,     Right,        Right,                  Right,       Right,       Right],
             &body
         );
     }

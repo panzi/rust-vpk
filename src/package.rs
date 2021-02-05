@@ -386,7 +386,7 @@ impl Package {
 
     #[inline]
     pub fn index_md5(&self) -> Option<&Md5> {
-        if self.other_md5_size >= ARCHIVE_MD5_SIZE as u32 {
+        if self.other_md5_size >= 16 {
             Some(&self.index_md5)
         } else {
             None
@@ -395,7 +395,7 @@ impl Package {
 
     #[inline]
     pub fn archive_md5s_md5(&self) -> Option<&Md5> {
-        if self.other_md5_size >= ARCHIVE_MD5_SIZE as u32 * 2 {
+        if self.other_md5_size >= 16 * 2 {
             Some(&self.archive_md5s_md5)
         } else {
             None
@@ -404,7 +404,7 @@ impl Package {
 
     #[inline]
     pub fn unknown_md5(&self) -> Option<&Md5> {
-        if self.other_md5_size >= ARCHIVE_MD5_SIZE as u32 * 3 {
+        if self.other_md5_size >= 16 * 3 {
             Some(&self.unknown_md5)
         } else {
             None

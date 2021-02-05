@@ -39,7 +39,7 @@ TODO
 * [x] unpack
 * [x] pack
 * [x] stats
-* [ ] more stats for v2 packages
+* [x] more stats for v2 packages
 * [x] read-only fuse filesystem
 * [x] read and evaluate md5 from VPK v2 files
 * [ ] read and evaluate signature from VPK v2 files? algorithm used is unknown
