@@ -75,7 +75,7 @@ pub struct Package {
     pub(crate) archive_md5s: Vec<ArchiveMd5>,
     pub(crate) index_md5:        Md5,
     pub(crate) archive_md5s_md5: Md5,
-    pub(crate) unknown_md5:      Md5,
+    pub(crate) everything_md5:   Md5,
 
     pub(crate) public_key: Vec<u8>,
     pub(crate) signature:  Vec<u8>,
@@ -149,7 +149,7 @@ impl Package {
         let mut archive_md5s = Vec::new();
         let mut index_md5:        Md5 = [0; 16];
         let mut archive_md5s_md5: Md5 = [0; 16];
-        let mut unknown_md5:      Md5 = [0; 16];
+        let mut everything_md5:   Md5 = [0; 16];
         let mut public_key = Vec::new();
         let mut signature  = Vec::new();
 
@@ -285,7 +285,7 @@ impl Package {
                     remaining -= 16;
 
                     if remaining >= 16 {
-                        file.read_exact(&mut unknown_md5)?;
+                        file.read_exact(&mut everything_md5)?;
                         remaining -= 16;
                     }
                 }
@@ -333,7 +333,7 @@ impl Package {
             archive_md5s,
             index_md5,
             archive_md5s_md5,
-            unknown_md5,
+            everything_md5,
             public_key,
             signature,
         })
@@ -342,6 +342,15 @@ impl Package {
     #[inline]
     pub fn version(&self) -> u32 {
         self.version
+    }
+
+    #[inline]
+    pub fn header_size(&self) -> u32 {
+        if self.version > 1 {
+            V2_HEADER_SIZE as u32
+        } else {
+            V1_HEADER_SIZE as u32
+        }
     }
 
     #[inline]
@@ -403,9 +412,9 @@ impl Package {
     }
 
     #[inline]
-    pub fn unknown_md5(&self) -> Option<&Md5> {
+    pub fn everything_md5(&self) -> Option<&Md5> {
         if self.other_md5_size >= 16 * 3 {
-            Some(&self.unknown_md5)
+            Some(&self.everything_md5)
         } else {
             None
         }

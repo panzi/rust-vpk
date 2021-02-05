@@ -666,13 +666,13 @@ pub fn pack(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, options: Pac
     let data_size = (data_end_offset - data_offset as u64) as u32;
     let signature_size = 0;
 
-    // TODO: VPK 2 support
+    // VPK 2 support
     let mut archive_md5_size = 0;
     let mut other_md5_size   = 0;
     let mut archive_md5s     = Vec::new();
     let mut index_md5        = [0; 16];
     let mut archive_md5s_md5 = [0; 16];
-    let unknown_md5          = [0; 16];
+    let everything_md5       = [0; 16]; // TODO: from offset 0 to just before where this will be written
 
     if options.version > 1 {
         let mut buf = Vec::with_capacity(options.md5_chunk_size as usize);
@@ -829,7 +829,7 @@ pub fn pack(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, options: Pac
         archive_md5s,
         index_md5,
         archive_md5s_md5,
-        unknown_md5,
+        everything_md5,
         public_key: Vec::new(),
         signature:  Vec::new(),
     })

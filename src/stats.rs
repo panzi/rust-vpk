@@ -277,21 +277,49 @@ pub fn stats(package: &Package, human_readable: bool) -> Result<()> {
         vec!["Wasted Size:",           &wasted],
     ], &[Left, Right]);
 
+    let header_size = package.header_size();
     if package.version > 1 {
         println!();
 
         print_headless_table(&[
-            vec!["Archive MD5s Size:", &fmt_size(package.archive_md5_size as u64)],
-            vec!["Other MD5s Size:",   &fmt_size(package.other_md5_size   as u64)],
-            vec!["Signature Size:",    &fmt_size(package.signature_size   as u64)],
-            vec![],
             vec!["Archive MD5 Count:", &format!("{}", package.archive_md5s.len())],
-            vec!["Index MD5:",        if package.index_md5().is_some()        { "Yes" } else { "No" }, &format_md5(package.index_md5())],
-            vec!["Archive MD5s MD5:", if package.archive_md5s_md5().is_some() { "Yes" } else { "No" }, &format_md5(package.archive_md5s_md5())],
-            vec!["Unknown MD5:",      if package.unknown_md5().is_some()      { "Yes" } else { "No" }, &format_md5(package.unknown_md5())],
-            vec!["Public Key:",       if package.public_key().is_some()       { "Yes" } else { "No" }],
-            vec!["Signature:",        if package.signature().is_some()        { "Yes" } else { "No" }],
+            vec!["Index MD5:",         if package.index_md5().is_some()        { "Yes" } else { "No" }, &format_md5(package.index_md5())],
+            vec!["Archive MD5s MD5:",  if package.archive_md5s_md5().is_some() { "Yes" } else { "No" }, &format_md5(package.archive_md5s_md5())],
+            vec!["Everything MD5:",    if package.everything_md5().is_some()   { "Yes" } else { "No" }, &format_md5(package.everything_md5())],
+            vec!["Public Key:",        if package.public_key().is_some()       { "Yes" } else { "No" }],
+            vec!["Signature:",         if package.signature().is_some()        { "Yes" } else { "No" }],
         ], &[Left, Right, Left]);
+
+        let archive_md5s_offset = package.data_offset + package.data_size;
+        let other_md5s_offset   = archive_md5s_offset + package.other_md5_size;
+        let signature_offset    = other_md5s_offset   + package.signature_size;
+
+        println!();
+
+        print_table(
+            &["Section", "Offset", "Size"],
+            &[Left,      Right,    Right],
+            &[
+                vec!["Header:",       "0",                                 &fmt_size(header_size as u64)],
+                vec!["Index:",        &format!("{}", header_size),         &fmt_size(package.index_size as u64)],
+                vec!["Data:",         &format!("{}", package.data_offset), &fmt_size(package.data_size as u64)],
+                vec!["Archive MD5s:", &format!("{}", archive_md5s_offset), &fmt_size(package.archive_md5_size as u64)],
+                vec!["Other MD5s:",   &format!("{}", other_md5s_offset),   &fmt_size(package.other_md5_size as u64)],
+                vec!["Signature:",    &format!("{}", signature_offset),    &fmt_size(package.signature_size as u64)],
+            ]
+        );
+    } else {
+        println!();
+
+        print_table(
+            &["Section", "Offset", "Size"],
+            &[Left,      Right,    Right],
+            &[
+                vec!["Header:", "0",                                 &fmt_size(header_size as u64)],
+                vec!["Index:",  &format!("{}", header_size),         &fmt_size(package.index_size as u64)],
+                vec!["Data:",   &format!("{}", package.data_offset), &fmt_size(package.data_size as u64)],
+            ]
+        );
     }
 
     println!();
