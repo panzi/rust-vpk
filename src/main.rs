@@ -164,7 +164,7 @@ fn run() -> Result<()> {
 
         .subcommand(SubCommand::with_name("check")
             .alias("c")
-            .about("Check CRC32 sums of files in a VPK package.")
+            .about("Check CRC32 and MD5 sums of files in a VPK package.")
             .arg(Arg::with_name("alignment")
                 .long("alignment")
                 .short("a")
