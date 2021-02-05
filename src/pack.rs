@@ -326,13 +326,6 @@ fn write_archive_md5s(dirwriter: &mut impl Write, archive_md5s: &Vec<ArchiveMd5>
     dirwriter.flush()
 }
 
-fn write_other_md5s(dirwriter: &mut impl Write, index_md5: &Md5, archive_md5s_md5: &Md5) -> std::io::Result<()> {
-    dirwriter.write_all(index_md5)?;
-    dirwriter.write_all(archive_md5s_md5)?;
-
-    Ok(())
-}
-
 fn calculate_md5<R>(reader: &mut R, offset: u64, size: u64) -> std::io::Result<Md5>
 where R: Read, R: Seek {
 
@@ -667,14 +660,21 @@ pub fn pack(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, options: Pac
     let signature_size = 0;
 
     // VPK 2 support
-    let mut archive_md5_size = 0;
-    let mut other_md5_size   = 0;
-    let mut archive_md5s     = Vec::new();
-    let mut index_md5        = [0; 16];
-    let mut archive_md5s_md5 = [0; 16];
-    let everything_md5       = [0; 16]; // TODO: from offset 0 to just before where this will be written
+    let mut archive_md5s = Vec::new();
+    let archive_md5_size;
+    let other_md5_size;
+    let index_md5;
+    let archive_md5s_md5;
+    let everything_md5;
 
-    if options.version > 1 {
+    if options.version < 2 {
+        archive_md5_size = 0;
+        other_md5_size   = 0;
+        index_md5        = [0; 16];
+        archive_md5s_md5 = [0; 16];
+        everything_md5   = [0; 16];
+    } else {
+        other_md5_size   = 16 * 3;
         let mut buf = Vec::with_capacity(options.md5_chunk_size as usize);
         buf.resize(options.md5_chunk_size as usize, 0);
 
@@ -764,7 +764,7 @@ pub fn pack(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, options: Pac
         }
         archive_md5_size = size as u32;
         if options.verbose {
-            println!("Writing archive MD5 sums...");
+            println!("writing archive MD5 sums...");
         }
 
         let mut writer = BufWriter::new(&mut dirwriter);
@@ -778,7 +778,7 @@ pub fn pack(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, options: Pac
         }
 
         if options.verbose {
-            println!("Calculating index MD5 sum...");
+            println!("calculating index MD5 sum...");
         }
 
         index_md5 = match calculate_md5(&mut dirreader, V2_HEADER_SIZE as u64, index_size as u64) {
@@ -787,7 +787,7 @@ pub fn pack(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, options: Pac
         };
 
         if options.verbose {
-            println!("Calculating MD5 sum section MD5 sum...");
+            println!("calculating MD5 sum section MD5 sum...");
         }
 
         archive_md5s_md5 = match calculate_md5(&mut dirreader, data_end_offset, archive_md5_size as u64) {
@@ -796,21 +796,54 @@ pub fn pack(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, options: Pac
         };
 
         if options.verbose {
-            println!("Writing these two MD5 sums...");
+            println!("writing these two MD5 sums...");
         }
 
-        other_md5_size = (index_md5.len() + archive_md5s_md5.len()) as u32;
-        if let Err(error) = write_other_md5s(&mut writer, &index_md5, &archive_md5s_md5) {
+        if let Err(error) = writer.write_all(&index_md5) {
             return Err(Error::io_with_path(error, dirvpk_path));
+        }
+
+        if let Err(error) = writer.write_all(&archive_md5s_md5) {
+            return Err(Error::io_with_path(error, dirvpk_path));
+        }
+
+        if options.verbose {
+            println!("wrting missing sizes to head...");
         }
 
         if let Err(error) = write_sizes(&mut writer, data_size, archive_md5_size, other_md5_size, signature_size) {
             return Err(Error::io_with_path(error, dirvpk_path));
         }
+
+        if let Err(error) = writer.flush() {
+            return Err(Error::io_with_path(error, dirvpk_path));
+        }
+
+        if options.verbose {
+            println!("calculating MD5 sum of everything above...");
+        }
+
+        everything_md5 = match calculate_md5(&mut dirreader, 0, data_end_offset + archive_md5_size as u64 + 16 * 2) {
+            Ok(md5) => md5,
+            Err(error) => return Err(Error::io_with_path(error, dirvpk_path)),
+        };
+
+        if options.verbose {
+            println!("writing this last MD5 sum...");
+        }
+
+        let everything_md5_offset = data_end_offset + archive_md5_size as u64 + 16 * 2;
+        if let Err(error) = writer.seek(SeekFrom::Start(everything_md5_offset)) {
+            return Err(Error::io_with_path(error, dirvpk_path));
+        }
+
+        if let Err(error) = writer.write_all(&everything_md5) {
+            return Err(Error::io_with_path(error, dirvpk_path));
+        }
     }
 
     if options.verbose {
-        println!("Done");
+        println!("done");
     }
 
     Ok(Package {

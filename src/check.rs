@@ -371,7 +371,7 @@ pub fn check(package: &Package, options: CheckOptions) -> Result<()> {
     if faild_files_count == 0 && failed_md5_count == 0 {
         Ok(())
     } else {
-        Err(Error::other(format!("CRC32 check failed for {} files and MD5 check failed for {} sections",
+        Err(Error::other(format!("CRC32 check failed for {} file(s) and MD5 check failed for {} section(s)",
             faild_files_count, failed_md5_count)))
     }
 }

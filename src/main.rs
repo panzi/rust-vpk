@@ -345,7 +345,7 @@ fn run() -> Result<()> {
             })?;
 
             if verbose {
-                println!("everything ok");
+                println!("everything is ok");
             }
         },
         ("unpack", Some(args)) => {
