@@ -22,7 +22,7 @@ use crate::entry;
 use crate::entry::{Entry, File};
 use crate::result::{Result, Error};
 use crate::sort::{Order, sort};
-use crate::consts::{VPK_MAGIC, V1_HEADER_SIZE, V2_HEADER_SIZE, ARCHIVE_MD5_SIZE};
+use crate::consts::{VPK_MAGIC, V1_HEADER_SIZE, V2_HEADER_SIZE, DIR_INDEX, ARCHIVE_MD5_SIZE};
 use crate::io::*;
 use crate::util::*;
 
@@ -104,6 +104,21 @@ fn mkpath<'a>(mut entries: &'a mut HashMap<String, Entry>, dirpath: &str) -> Res
     return Ok(entries);
 }
 
+fn fix_dir_offsets(entries: &mut HashMap<String, Entry>, data_offset: u32) {
+    for entry in entries.values_mut() {
+        match entry {
+            Entry::File(file) => {
+                if file.archive_index == DIR_INDEX {
+                    file.offset += data_offset;
+                }
+            },
+            Entry::Dir(dir) => {
+                fix_dir_offsets(&mut dir.children, data_offset);
+            }
+        }
+    }
+}
+
 pub(crate) fn parse_path(path: impl AsRef<Path>) -> Result<(PathBuf, String)> {
     let path = path.as_ref();
     let dirpath = if let Some(path) = path.parent() {
@@ -129,9 +144,9 @@ pub(crate) fn parse_path(path: impl AsRef<Path>) -> Result<(PathBuf, String)> {
 }
 
 impl Package {
-    pub fn from_path(path: impl AsRef<Path>) -> Result<Package> {
+    pub fn from_path(path: impl AsRef<Path>, allow_v0: bool) -> Result<Package> {
         match fs::File::open(&path) {
-            Ok(mut file) => match Self::from_file(&mut file, &path) {
+            Ok(mut file) => match Self::from_file(&mut file, &path, allow_v0) {
                 Ok(package) => Ok(package),
                 Err(error) => if error.path.is_none() {
                     Err(error.with_path(path))
@@ -143,7 +158,7 @@ impl Package {
         }
     }
 
-    fn from_file(file: &mut fs::File, path: impl AsRef<Path>) -> Result<Package> {
+    fn from_file(file: &mut fs::File, path: impl AsRef<Path>, allow_v0: bool) -> Result<Package> {
         let (dirpath, prefix) = parse_path(&path)?;
 
         let mut archive_md5s = Vec::new();
@@ -157,26 +172,43 @@ impl Package {
         let mut magic = [0; 4];
         file.read_exact(&mut magic)?;
 
+        let version;
+        let mut index_size;
+
         if magic != VPK_MAGIC {
-            return Err(Error::illegal_magic(magic).with_path(path));
+            if allow_v0 {
+                version = 0;
+                file.seek(SeekFrom::Start(0))?;
+            } else {
+                return Err(Error::illegal_magic(magic).with_path(path));
+            }
+            // offsets of file data in _dir.vpk needs to be fixed later
+            index_size = 0;
+        } else {
+            version = read_u32(&mut file)?;
+
+            if version == 0 || version > 2 {
+                return Err(Error::unsupported_version(version).with_path(path));
+            }
+            index_size = read_u32(&mut file)?;
         }
-
-        let version = read_u32(&mut file)?;
-
-        if version == 0 || version > 2 {
-            return Err(Error::unsupported_version(version).with_path(path));
-        }
-
-        let index_size = read_u32(&mut file)?;
 
         let header_size: usize;
-        let mut data_size        = 0u32;
-        let mut archive_md5_size = 0u32;
-        let mut other_md5_size   = 0u32;
-        let mut signature_size   = 0u32;
+        let data_size;
+        let archive_md5_size;
+        let other_md5_size;
+        let signature_size;
 
         if version < 2 {
-            header_size = V1_HEADER_SIZE;
+            if version == 0 {
+                header_size = 0;
+            } else {
+                header_size = V1_HEADER_SIZE;
+            }
+            data_size        = 0u32;
+            archive_md5_size = 0u32;
+            other_md5_size   = 0u32;
+            signature_size   = 0u32;
         } else {
             header_size      = V2_HEADER_SIZE;
             data_size        = read_u32(&mut file)?;
@@ -185,7 +217,7 @@ impl Package {
             signature_size   = read_u32(&mut file)?;
         };
 
-        let data_offset = header_size as u32 + index_size;
+        let mut data_offset = header_size as u32 + index_size;
 
         let mut entries = HashMap::new();
         let mut index   = 0usize;
@@ -233,6 +265,13 @@ impl Package {
                     children.insert(name, Entry::File(entry));
                 }
             }
+        }
+
+        if version == 0 {
+            data_offset = file.seek(SeekFrom::Current(0))? as u32;
+            index_size  = data_offset;
+
+            fix_dir_offsets(&mut entries, data_offset);
         }
 
         if version > 1 {
@@ -346,10 +385,10 @@ impl Package {
 
     #[inline]
     pub fn header_size(&self) -> u32 {
-        if self.version > 1 {
-            V2_HEADER_SIZE as u32
-        } else {
-            V1_HEADER_SIZE as u32
+        match self.version {
+            0 => 0,
+            1 => V1_HEADER_SIZE as u32,
+            _ => V2_HEADER_SIZE as u32,
         }
     }
 

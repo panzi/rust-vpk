@@ -56,7 +56,7 @@ TODO
       to be adjusted like they do for file entries. Currently I assumed they
       don't, but I don't have a game that uses VPK v2 and embeds any data in the
       `_dir.vpk` file (outside the data directly inlined in the index).
-* [ ] maybe support "version 0"? The version without any header.
+* [x] maybe support "version 0"? The version without any header.
 * [ ] read and evaluate signature from VPK v2 files? algorithm used is unknown
 * [x] better help message
 * [x] code cleanups/refactorings

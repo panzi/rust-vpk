@@ -113,6 +113,14 @@ fn arg_verbose<'a, 'b>() -> Arg<'a, 'b> {
         .help("Print verbose output.")
 }
 
+fn arg_allow_v0<'a, 'b>() -> Arg<'a, 'b> {
+    Arg::with_name("allow-v0")
+        .long("allow-v0")
+        .short("0")
+        .takes_value(false)
+        .help("Allow version 0 packages. (Packages without a header.)")
+}
+
 fn run() -> Result<()> {
     let default_max_inline_size_str = format!("{}", DEFAULT_MAX_INLINE_SIZE);
 
@@ -152,6 +160,7 @@ fn run() -> Result<()> {
                      \n\
                      vpk list --sort=-full-size,name")
             )
+            .arg(arg_allow_v0())
             .arg(arg_human_readable())
             .arg(arg_package())
             .arg(arg_paths()))
@@ -159,6 +168,7 @@ fn run() -> Result<()> {
         .subcommand(SubCommand::with_name("stats")
             .alias("s")
             .about("Print some statistics of a VPK package.")
+            .arg(arg_allow_v0())
             .arg(arg_human_readable())
             .arg(arg_package()))
 
@@ -172,6 +182,7 @@ fn run() -> Result<()> {
                 .value_name("ALIGNMENT")
                 .help("Assume alignment of file data in bytes and print the differentce to the real alignment."))
             .arg(arg_verbose())
+            .arg(arg_allow_v0())
             .arg(arg_human_readable())
             .arg(Arg::with_name("stop-on-error")
                 .long("stop-on-error")
@@ -201,6 +212,7 @@ fn run() -> Result<()> {
                 .short("c")
                 .takes_value(false)
                 .help("Check CRC32 sums while unpacking."))
+            .arg(arg_allow_v0())
             .arg(arg_package())
             .arg(arg_paths()))
 
@@ -266,6 +278,7 @@ fn run() -> Result<()> {
         .long_about(
             "Mount a VPK v1/v2 package as read-only filesystem.\n\
              Use `fusermount -u <MOUNT-POINT>` to unmount again.")
+        .arg(arg_allow_v0())
         .arg(Arg::with_name("foreground")
             .long("foreground")
             .short("f")
@@ -297,11 +310,12 @@ fn run() -> Result<()> {
                 None => &DEFAULT_ORDER[..],
             };
 
+            let allow_v0       = args.is_present("allow-v0");
             let human_readable = args.is_present("human-readable");
             let path           = args.value_of("package").unwrap();
             let filter         = Filter::new(args);
 
-            let package = Package::from_path(&path)?;
+            let package = Package::from_path(&path, allow_v0)?;
 
             list(&package, ListOptions {
                 order,
@@ -310,6 +324,7 @@ fn run() -> Result<()> {
             })?;
         },
         ("check", Some(args)) => {
+            let allow_v0       = args.is_present("allow-v0");
             let human_readable = args.is_present("human-readable");
             let verbose        = args.is_present("verbose");
             let stop_on_error  = args.is_present("stop-on-error");
@@ -334,7 +349,7 @@ fn run() -> Result<()> {
                 None
             };
 
-            let package = Package::from_path(&path)?;
+            let package = Package::from_path(&path, allow_v0)?;
 
             check(&package, CheckOptions {
                 verbose,
@@ -349,6 +364,7 @@ fn run() -> Result<()> {
             }
         },
         ("unpack", Some(args)) => {
+            let allow_v0             = args.is_present("allow-v0");
             let outdir               = args.value_of("outdir").unwrap_or(".");
             let verbose              = args.is_present("verbose");
             let check                = args.is_present("check");
@@ -356,7 +372,7 @@ fn run() -> Result<()> {
             let path                 = args.value_of("package").unwrap();
             let filter               = Filter::new(args);
 
-            let package = Package::from_path(&path)?;
+            let package = Package::from_path(&path, allow_v0)?;
 
             unpack(&package, outdir, UnpackOptions {
                 filter: filter.as_ref(),
@@ -370,7 +386,7 @@ fn run() -> Result<()> {
             let path    = args.value_of("package").unwrap();
             let version = if let Some(version) = args.value_of("version") {
                 if let Ok(value) = version.parse::<u32>() {
-                    if value < 1 || value > 2 {
+                    if value > 2 {
                         return Err(Error::illegal_argument(
                             "--version",
                             version
@@ -470,21 +486,23 @@ fn run() -> Result<()> {
             })?;
         },
         ("stats", Some(args)) => {
+            let allow_v0       = args.is_present("allow-v0");
             let human_readable = args.is_present("human-readable");
             let path           = args.value_of("package").unwrap();
 
-            let package = Package::from_path(&path)?;
+            let package = Package::from_path(&path, allow_v0)?;
 
             stats(&package, human_readable)?;
         },
         #[cfg(feature = "fuse")]
         ("mount", Some(args)) => {
+            let allow_v0    = args.is_present("allow-v0");
             let debug       = args.is_present("debug");
             let foreground  = args.is_present("foreground");
             let path        = args.value_of("package").unwrap();
             let mount_point = args.value_of("mount-point").unwrap();
 
-            let package = Package::from_path(&path)?;
+            let package = Package::from_path(&path, allow_v0)?;
 
             mount(package, &mount_point, MountOptions { foreground, debug })?;
         },

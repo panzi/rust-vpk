@@ -302,7 +302,7 @@ pub fn stats(package: &Package, human_readable: bool) -> Result<()> {
             &[
                 vec!["Header:",       "0",                                 &fmt_size(header_size as u64)],
                 vec!["Index:",        &format!("{}", header_size),         &fmt_size(package.index_size as u64)],
-                vec!["Data:",         &format!("{}", package.data_offset), &fmt_size(package.data_size as u64)],
+                vec!["Data:",         &format!("{}", package.data_offset), &fmt_size(package.data_size  as u64)],
                 vec!["Archive MD5s:", &format!("{}", archive_md5s_offset), &fmt_size(package.archive_md5_size as u64)],
                 vec!["Other MD5s:",   &format!("{}", other_md5s_offset),   &fmt_size(package.other_md5_size as u64)],
                 vec!["Signature:",    &format!("{}", signature_offset),    &fmt_size(package.signature_size as u64)],
@@ -317,7 +317,7 @@ pub fn stats(package: &Package, human_readable: bool) -> Result<()> {
             &[
                 vec!["Header:", "0",                                 &fmt_size(header_size as u64)],
                 vec!["Index:",  &format!("{}", header_size),         &fmt_size(package.index_size as u64)],
-                vec!["Data:",   &format!("{}", package.data_offset), &fmt_size(package.data_size as u64)],
+                vec!["Data:",   &format!("{}", package.data_offset), &fmt_size(package.data_size  as u64)],
             ]
         );
     }

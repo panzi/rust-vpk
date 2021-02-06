@@ -261,19 +261,21 @@ fn write_dir(
     let mut exts: Vec<&str> = extmap.keys().map(|s| s.as_ref()).collect();
     exts.sort();
 
-    dirwriter.write_all(&VPK_MAGIC)?;
+    if version > 0 {
+        dirwriter.write_all(&VPK_MAGIC)?;
 
-    write_u32(&mut dirwriter, version)?;
-    write_u32(&mut dirwriter, index_size)?;
+        write_u32(&mut dirwriter, version)?;
+        write_u32(&mut dirwriter, index_size)?;
 
-    if version > 1 {
-        // write placeholder
-        dirwriter.write_all(&[
-            0, 0, 0, 0, // data size
-            0, 0, 0, 0, // archive MD5 size
-            0, 0, 0, 0, // other MD5 size
-            0, 0, 0, 0, // signature size
-        ])?;
+        if version > 1 {
+            // write placeholder
+            dirwriter.write_all(&[
+                0, 0, 0, 0, // data size
+                0, 0, 0, 0, // archive MD5 size
+                0, 0, 0, 0, // other MD5 size
+                0, 0, 0, 0, // signature size
+            ])?;
+        }
     }
 
     for ext in &exts {
@@ -353,6 +355,7 @@ where R: Read, R: Seek {
 // TODO: more grouping/file order options?
 pub fn pack(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, options: PackOptions) -> Result<Package> {
     let header_size = match options.version {
+        0 => 0,
         1 => V1_HEADER_SIZE,
         2 => V2_HEADER_SIZE,
         _ => return Err(Error::unsupported_version(options.version)),
