@@ -87,6 +87,7 @@ Offensive is known to use this format.
  0x0000      *  Type    A list of file types. Files are grouped by their
                         types. The list is terminated by a 0-byte. This can
                         also be interpreted as a zero-length type name.
+      ?      1  Byte    The mentioned terminating 0-byte.
 ```
 
 #### Type
@@ -98,6 +99,7 @@ Offensive is known to use this format.
       ?      *  Dir     A list of directories. The list is terminated by
                         a 0-byte. This can also be interpreted as a
                         zero-length directory path.
+      ?      1  Byte    The mentioned terminating 0-byte.
 ```
 
 #### Dir
@@ -109,6 +111,7 @@ Offensive is known to use this format.
       ?      *  File    A list of files. The list is terminated by a 0-byte.
                         This can also be interpreted as a zero-length
                         directory path.
+      ?      1  Byte    The mentioned terminating 0-byte.
 ```
 
 #### File
