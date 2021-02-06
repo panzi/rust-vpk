@@ -27,6 +27,7 @@ pub enum ErrorType {
     NoSuchEntry(String),
     IllegalArgument { name: &'static str, value: String },
     UnexpectedEOF,
+    SanityCheckFaild(String),
     Other(String),
 }
 
@@ -148,6 +149,16 @@ impl Error {
             },
         }
     }
+
+    #[inline]
+    pub fn sanity_check_failed(message: impl AsRef<str>) -> Self {
+        Error {
+            path:       None,
+            error_type: ErrorType::SanityCheckFaild(
+                message.as_ref().to_owned(),
+            ),
+        }
+    }
 }
 
 impl std::fmt::Display for ErrorType {
@@ -163,6 +174,7 @@ impl std::fmt::Display for ErrorType {
             ErrorType::NoSuchEntry(path)               => write!(f, "entry not found: {:?}", path),
             ErrorType::IllegalArgument { name, value } => write!(f, "illegal argument for {}: {:?}", name, value),
             ErrorType::UnexpectedEOF                   => write!(f, "unexpected end of file"),
+            ErrorType::SanityCheckFaild(msg)           => msg.fmt(f),
             ErrorType::Other(msg)                      => msg.fmt(f),
         }
     }

@@ -272,12 +272,22 @@ impl Package {
             index_size  = data_offset;
 
             fix_dir_offsets(&mut entries, data_offset);
+        } else {
+            let actual_data_offset = file.seek(SeekFrom::Current(0))?;
+
+            if actual_data_offset < data_offset as u64 {
+                return Err(Error::sanity_check_failed(format!(
+                    "index overlaps with data section: {} > {}",
+                    data_offset, actual_data_offset)));
+            } else if actual_data_offset > data_offset as u64 {
+                let remaining = actual_data_offset - data_offset as u64;
+                eprintln!("*** warning: {} bytes left after index section", remaining);
+                file.seek(SeekFrom::Current(remaining as i64))?;
+            }
         }
 
         if version > 1 {
-            if let Err(error) = file.seek(SeekFrom::Current(data_size as i64)) {
-                return Err(Error::io_with_path(error, path));
-            }
+            file.seek(SeekFrom::Current(data_size as i64))?;
 
             let mut remaining = archive_md5_size as usize;
             while remaining >= ARCHIVE_MD5_SIZE {
