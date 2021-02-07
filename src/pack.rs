@@ -138,11 +138,23 @@ impl Gather {
                     Err(error) => return Err(Error::io_with_path(error, dirent.path())),
                 };
                 if file_type.is_dir() {
-                    let mut dir = Dir {
-                        children: HashMap::new()
-                    };
-                    self.gather_files(&mut dir.children, archive_index, &dirent.path(), false)?;
-                    entries.insert(name.to_owned(), Entry::Dir(dir));
+                    if let Some(entry) = entries.get_mut(name) {
+                        match entry {
+                            Entry::Dir(dir) => {
+                                self.gather_files(&mut dir.children, archive_index, &dirent.path(), false)?;
+                            },
+                            Entry::File(_) => {
+                                // TODO: parameter to entry_not_a_dir() should be path in the package
+                                return Err(Error::entry_not_a_dir(name).with_path(dirent.path()));
+                            }
+                        }
+                    } else {
+                        let mut dir = Dir {
+                            children: HashMap::new()
+                        };
+                        self.gather_files(&mut dir.children, archive_index, &dirent.path(), false)?;
+                        entries.insert(name.to_owned(), Entry::Dir(dir));
+                    }
                 } else if root {
                     return Err(Error::other("all files must be in sub-directories").with_path(dirent.path()));
                 } else if let Some(dot_index) = name.rfind('.') {
