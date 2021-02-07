@@ -120,12 +120,16 @@ fn fix_dir_offsets(entries: &mut HashMap<String, Entry>, data_offset: u32) {
 }
 
 pub(crate) fn parse_path(path: impl AsRef<Path>) -> Result<(PathBuf, String)> {
-    let path = match path.as_ref().canonicalize() {
-        Ok(path) => path,
-        Err(error) => return Err(Error::io_with_path(error, path)),
-    };
-    let dirpath = if let Some(path) = path.parent() {
-        path.to_owned()
+    let path = path.as_ref();
+    let dirpath = if let Some(parent) = path.parent() {
+        if parent == std::ffi::OsStr::new("") {
+            match std::env::current_dir() {
+                Ok(parent) => parent,
+                Err(error) => return Err(Error::io_with_path(error, path)),
+            }
+        } else {
+            parent.to_owned()
+        }
     } else {
         return Err(Error::other("could not get parent directory").with_path(path));
     };

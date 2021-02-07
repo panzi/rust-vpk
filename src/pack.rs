@@ -414,7 +414,7 @@ pub fn pack(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, options: Pac
         _ => return Err(Error::unsupported_version(options.version)),
     };
 
-    let (dirpath, prefix) = parse_path(&dirvpk_path)?;
+    let (dirpath, prefix) = parse_path(dirvpk_path.as_ref())?;
 
     let mut entries = HashMap::new();
     let mut gather = Gather::new(options.max_inline_size, options.verbose);

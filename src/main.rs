@@ -315,7 +315,7 @@ fn run() -> Result<()> {
             let path           = args.value_of("package").unwrap();
             let filter         = Filter::new(args);
 
-            let package = Package::from_path(&path, allow_v0)?;
+            let package = Package::from_path(path, allow_v0)?;
 
             list(&package, ListOptions {
                 order,
@@ -349,7 +349,7 @@ fn run() -> Result<()> {
                 None
             };
 
-            let package = Package::from_path(&path, allow_v0)?;
+            let package = Package::from_path(path, allow_v0)?;
 
             check(&package, CheckOptions {
                 verbose,
@@ -372,7 +372,7 @@ fn run() -> Result<()> {
             let path                 = args.value_of("package").unwrap();
             let filter               = Filter::new(args);
 
-            let package = Package::from_path(&path, allow_v0)?;
+            let package = Package::from_path(path, allow_v0)?;
 
             unpack(&package, outdir, UnpackOptions {
                 filter: filter.as_ref(),
@@ -476,7 +476,7 @@ fn run() -> Result<()> {
                 ArchiveStrategy::default()
             };
 
-            pack(&path, &indir, PackOptions {
+            pack(path, indir, PackOptions {
                 version,
                 md5_chunk_size,
                 strategy,
@@ -490,7 +490,7 @@ fn run() -> Result<()> {
             let human_readable = args.is_present("human-readable");
             let path           = args.value_of("package").unwrap();
 
-            let package = Package::from_path(&path, allow_v0)?;
+            let package = Package::from_path(path, allow_v0)?;
 
             stats(&package, human_readable)?;
         },
@@ -502,7 +502,7 @@ fn run() -> Result<()> {
             let path        = args.value_of("package").unwrap();
             let mount_point = args.value_of("mount-point").unwrap();
 
-            let package = Package::from_path(&path, allow_v0)?;
+            let package = Package::from_path(path, allow_v0)?;
 
             mount(package, &mount_point, MountOptions { foreground, debug })?;
         },
