@@ -65,7 +65,9 @@ pub fn unpack(package: &Package, outdir: impl AsRef<Path>, options: UnpackOption
         let mut outpath = outdir.as_ref().to_path_buf();
 
         if options.dirname_from_archive {
-            if file.archive_index == DIR_INDEX {
+            if file.size == 0 {
+                outpath.push("inline");
+            } else if file.archive_index == DIR_INDEX {
                 outpath.push("dir");
             } else {
                 outpath.push(format!("{:03}", file.archive_index));

@@ -19,6 +19,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path};
 use std::fs::{self, read_dir};
 use std::io::{Read, Write, Seek, SeekFrom, BufWriter};
+//use std::fmt::Write;
 
 use crc::{crc32, Hasher32};
 
@@ -76,6 +77,8 @@ struct Gather {
     max_inline_size: u16,
     buf: [u8; BUFFER_SIZE],
     exts: HashSet<String>,
+    verbose: bool,
+    inline: bool,
 }
 
 struct Item<'a> {
@@ -104,16 +107,18 @@ impl Item<'_> {
 
 impl Gather {
     #[inline]
-    fn new(max_inline_size: u16) -> Self {
+    fn new(max_inline_size: u16, verbose: bool) -> Self {
         Gather {
             digest: crc32::Digest::new(crc32::IEEE),
             max_inline_size,
             buf: [0; BUFFER_SIZE],
             exts: HashSet::new(),
+            verbose,
+            inline: false,
         }
     }
 
-    fn gather_files(&mut self, entries: &mut HashMap<String, Entry>, archive_index: u16, dirpath: &Path, root: bool, verbose: bool) -> Result<()> {
+    fn gather_files(&mut self, entries: &mut HashMap<String, Entry>, archive_index: u16, dirpath: &Path, root: bool) -> Result<()> {
         let dirents = match read_dir(dirpath) {
             Ok(dirents) => dirents,
             Err(error) => return Err(Error::io_with_path(error, dirpath)),
@@ -123,7 +128,7 @@ impl Gather {
                 Ok(dirent) => dirent,
                 Err(error) => return Err(Error::io_with_path(error, dirpath)),
             };
-            if verbose {
+            if self.verbose {
                 println!("scanning {:?}", dirent.path());
             }
             let os_name = dirent.file_name();
@@ -136,7 +141,7 @@ impl Gather {
                     let mut dir = Dir {
                         children: HashMap::new()
                     };
-                    self.gather_files(&mut dir.children, archive_index, &dirent.path(), false, verbose)?;
+                    self.gather_files(&mut dir.children, archive_index, &dirent.path(), false)?;
                     entries.insert(name.to_owned(), Entry::Dir(dir));
                 } else if root {
                     return Err(Error::other("all files must be in sub-directories").with_path(dirent.path()));
@@ -161,7 +166,8 @@ impl Gather {
                     let size = meta.len();
 
                     if size > std::i32::MAX as u64 {
-                        return Err(Error::other(format!("file too big {} > {}", size, std::i32::MAX)).with_path(dirent.path()));
+                        return Err(Error::other(format!("file too big {} > {}", size, std::i32::MAX))
+                            .with_path(dirent.path()));
                     }
 
                     let mut size = size as u32;
@@ -169,7 +175,13 @@ impl Gather {
                     let inline_size: u16;
 
                     self.digest.reset();
-                    if size <= self.max_inline_size as u32 {
+                    if self.inline || size <= self.max_inline_size as u32 {
+                        if size > std::u16::MAX as u32 {
+                            return Err(Error::other(format!(
+                                "file is meant to be inlined into the index, but is too big: {} > {}",
+                                size, std::u16::MAX))
+                                .with_path(dirent.path()));
+                        }
                         inline_size = size as u16;
                         size = 0;
                         preload.resize(inline_size as usize, 0);
@@ -206,7 +218,36 @@ impl Gather {
                         size,
                         preload,
                     };
-                    entries.insert(name.to_owned(), Entry::File(file));
+                    if let Some(old) = entries.insert(name.to_owned(), Entry::File(file)) {
+                        use std::fmt::Write;
+
+                        let mut msg = String::new();
+                        write!(&mut msg, "file \"{}\" occured twice, once ", name).unwrap();
+                        if inline_size > 0 && size == 0 {
+                            msg.push_str("inlined in index");
+                        } else if archive_index == DIR_INDEX {
+                            msg.push_str("from \"dir\"");
+                        } else {
+                            write!(&mut msg, "from archive \"{:03}\"", archive_index).unwrap();
+                        }
+                        msg.push_str(", and once ");
+                        match old {
+                            Entry::Dir(_) => {
+                                msg.push_str("it's a directory");
+                            },
+                            Entry::File(file) => {
+                                if file.inline_size > 0 && file.size == 0 {
+                                    msg.push_str("inlined in index");
+                                } else if file.archive_index == DIR_INDEX {
+                                    msg.push_str("from \"dir\"");
+                                } else {
+                                    write!(&mut msg, "from archive \"{:03}\"", file.archive_index).unwrap();
+                                }
+                            }
+                        }
+
+                        return Err(Error::other(msg).with_path(dirent.path()));
+                    }
                 } else {
                     return Err(Error::other("filenames must be of format \"NAME.EXT\"").with_path(dirent.path()));
                 }
@@ -364,7 +405,7 @@ pub fn pack(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, options: Pac
     let (dirpath, prefix) = parse_path(&dirvpk_path)?;
 
     let mut entries = HashMap::new();
-    let mut gather = Gather::new(options.max_inline_size);
+    let mut gather = Gather::new(options.max_inline_size, options.verbose);
 
     if options.verbose {
         println!("scanning {:?}", indir.as_ref());
@@ -387,25 +428,30 @@ pub fn pack(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, options: Pac
                 };
                 if file_type.is_dir() {
                     if let Some(name) = dirent.file_name().to_str() {
-                        if name.eq("dir") {
-                            gather.gather_files(&mut entries, DIR_INDEX, &dirent.path(), true, options.verbose)?;
+                        if name == "dir" {
+                            gather.inline = false;
+                            gather.gather_files(&mut entries, DIR_INDEX, &dirent.path(), true)?;
+                        } else if name == "inline" {
+                            gather.inline = true;
+                            gather.gather_files(&mut entries, DIR_INDEX, &dirent.path(), true)?;
                         } else if name.len() != 3 {
-                            eprintln!("WRANING: directory name is neither 3 digit a number nor \"dir\": {:?}", dirent.path());
+                            eprintln!("WARNING: directory name is neither a 3 digit number, \"dir\", nor \"inline\": {:?}", dirent.path());
                         } else if let Ok(archive_index) = name.parse::<u16>() {
                             if archive_index <= 999 {
-                                gather.gather_files(&mut entries, archive_index, &dirent.path(), true, options.verbose)?;
+                                gather.inline = false;
+                                gather.gather_files(&mut entries, archive_index, &dirent.path(), true)?;
                             } else {
-                                eprintln!("WRANING: directory name represents a too large number for an archive index: {:?}", dirent.path());
+                                eprintln!("WARNING: directory name represents a too large number for an archive index: {:?}", dirent.path());
                             }
                         } else {
-                            eprintln!("WRANING: directory name is neither 3 digit a number nor \"dir\": {:?}", dirent.path());
+                            eprintln!("WARNING: directory name is neither a 3 digit number, \"dir\", nor \"inline\": {:?}", dirent.path());
                         }
                     }
                 }
             }
         },
         ArchiveStrategy::MaxArchiveSize(_) => {
-            gather.gather_files(&mut entries, DIR_INDEX, indir.as_ref(), true, options.verbose)?;
+            gather.gather_files(&mut entries, DIR_INDEX, indir.as_ref(), true)?;
         }
     }
 
@@ -467,6 +513,7 @@ pub fn pack(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, options: Pac
     if options.verbose {
         println!("distributing files to archives...");
     }
+    let mut data_end_offset = dir_size as u64;
     match options.strategy {
         ArchiveStrategy::MaxArchiveSize(max_size) => {
             // distribute files to archives
@@ -484,6 +531,7 @@ pub fn pack(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, options: Pac
                     let new_archive_size = archive_size + item.file.size as usize;
                     if new_archive_size > max_size as usize {
                         if archive_index == DIR_INDEX {
+                            data_end_offset = archive_size as u64;
                             archive_index = 0;
                         } else if archive_index == 999 {
                             return Err(Error::other(format!("too many archives")));
@@ -498,6 +546,10 @@ pub fn pack(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, options: Pac
                     }
                     item.file.archive_index = archive_index;
                 }
+            }
+
+            if archive_index == DIR_INDEX {
+                data_end_offset = archive_size as u64;
             }
         },
         ArchiveStrategy::ArchiveFromDirName => {
@@ -518,6 +570,8 @@ pub fn pack(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, options: Pac
                     *archive_size += item.file.size as usize;
                 }
             }
+
+            data_end_offset = *archmap.get(&DIR_INDEX).unwrap() as u64;
         }
     }
 
@@ -606,33 +660,33 @@ pub fn pack(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, options: Pac
         for (vpk_path, file) in files {
             if options.verbose {
                 if archive_index == DIR_INDEX {
-                    println!("writing {} bytes at offset {} to {}_dir.vpk: {:?}",
+                    println!("writing {:>10} bytes at offset {:>10} to {}_dir.vpk: {:?}",
                         file.size, file.offset, prefix, vpk_path);
                 } else {
-                    println!("writing {} bytes at offset {} to {}_{:03}.vpk: {:?}",
+                    println!("writing {:>10} bytes at offset {:>10} to {}_{:03}.vpk: {:?}",
                         file.size, file.offset, file.archive_index, prefix, vpk_path);
                 }
             }
 
-            if let Err(error) = writer.seek(SeekFrom::Start(file.offset as u64)) {
-                return Err(Error::io_with_path(error, archpath));
-            }
-
-            let mut fs_path = indir.as_ref().to_path_buf();
-
-            if let ArchiveStrategy::ArchiveFromDirName = options.strategy {
-                if archive_index == DIR_INDEX {
-                    fs_path.push("dir");
-                } else {
-                    fs_path.push(format!("{:03}", archive_index));
-                }
-            }
-
-            for (_, item, _) in split_path(vpk_path) {
-                fs_path.push(item);
-            }
-
             if file.size > 0 {
+                let mut fs_path = indir.as_ref().to_path_buf();
+
+                if let ArchiveStrategy::ArchiveFromDirName = options.strategy {
+                    if archive_index == DIR_INDEX {
+                        fs_path.push("dir");
+                    } else {
+                        fs_path.push(format!("{:03}", archive_index));
+                    }
+                }
+
+                for (_, item, _) in split_path(vpk_path) {
+                    fs_path.push(item);
+                }
+
+                if let Err(error) = writer.seek(SeekFrom::Start(file.offset as u64)) {
+                    return Err(Error::io_with_path(error, archpath));
+                }
+
                 match fs::File::open(&fs_path) {
                     Ok(mut reader) => {
                         if file.inline_size > 0 {
@@ -653,13 +707,8 @@ pub fn pack(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, options: Pac
         }
     }
 
-    let data_end_offset = match dirwriter.seek(SeekFrom::Current(0)) {
-        Ok(offset) => offset,
-        Err(error) => return Err(Error::io_with_path(error, dirvpk_path)),
-    };
-
     let data_offset = dir_size as u32;
-    let data_size = (data_end_offset - data_offset as u64) as u32;
+    let data_size   = (data_end_offset - data_offset as u64) as u32;
     let signature_size = 0;
 
     // VPK 2 support

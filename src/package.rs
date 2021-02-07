@@ -258,7 +258,7 @@ impl Package {
                     index += 1;
 
                     if children.contains_key(&name) {
-                        eprintln!("*** warning: file occured more than once: {:?}",
+                        eprintln!("WARNING: file occured more than once: {:?}",
                             format!("{}/{}.{}", dirname, name, ext));
                     }
 
@@ -281,7 +281,7 @@ impl Package {
                     data_offset, actual_data_offset)));
             } else if actual_data_offset > data_offset as u64 {
                 let remaining = actual_data_offset - data_offset as u64;
-                eprintln!("*** warning: {} bytes left after index section", remaining);
+                eprintln!("WARNING: {} bytes left after index section", remaining);
                 file.seek(SeekFrom::Current(remaining as i64))?;
             }
         }
@@ -301,7 +301,7 @@ impl Package {
                 remaining -= ARCHIVE_MD5_SIZE;
 
                 if archive_index > std::u16::MAX as u32 {
-                    eprintln!("*** warning: archive_index in MD5 section too big: {} > {}",
+                    eprintln!("WARNING: archive_index in MD5 section too big: {} > {}",
                         archive_index, std::u16::MAX);
                     continue;
                 }
@@ -320,7 +320,7 @@ impl Package {
             });
 
             if remaining > 0 {
-                eprintln!("*** warning: {} bytes left after archive MD5 section", remaining);
+                eprintln!("WARNING: {} bytes left after archive MD5 section", remaining);
                 file.seek(SeekFrom::Current(remaining as i64))?;
             }
 
@@ -341,7 +341,7 @@ impl Package {
             }
 
             if remaining > 0 {
-                eprintln!("*** warning: {} bytes left after the other MD5 section", remaining);
+                eprintln!("WARNING: {} bytes left after the other MD5 section", remaining);
                 file.seek(SeekFrom::Current(remaining as i64))?;
             }
 
@@ -363,7 +363,7 @@ impl Package {
             }
 
             if remaining > 0 {
-                eprintln!("*** warning: {} bytes left after the signature section", remaining);
+                eprintln!("WARNING: {} bytes left after the signature section", remaining);
                 file.seek(SeekFrom::Current(remaining as i64))?;
             }
         }
