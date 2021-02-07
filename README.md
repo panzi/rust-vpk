@@ -44,26 +44,13 @@ possible.
 TODO
 ----
 
-* [x] list
-* [x] check
-* [x] unpack
-* [x] pack
-* [x] stats
-* [x] more stats for v2 packages
-* [x] read-only fuse filesystem
-* [x] read and evaluate md5 from VPK v2 files
-* [x] BUG: random missing files when mounting!
-* [ ] find out if the archive MD5 sum offsets for the `_dir.vpk` archive need
+* [ ] Find out if the archive MD5 sum offsets for the `_dir.vpk` archive need
       to be adjusted like they do for file entries. Currently I assumed they
       don't, but I don't have a game that uses VPK v2 and embeds any data in the
-      `_dir.vpk` file (outside the data directly inlined in the index).
-* [x] maybe support "version 0"? The version without any header.
-* [ ] read and evaluate signature from VPK v2 files? algorithm used is unknown
-* [x] better help message
-* [x] code cleanups/refactorings
-* [x] find out what the last remaining MD5 sum does
-* [ ] more code cleanups/refactorings (mainly pack and check)
-* [x] choose license (probably GPLv3)
+      `_dir.vpk` file (outside the data directly inlined in the index). Don't
+      know how I would find that out.
+* [ ] Read and evaluate signature from VPK v2 files? Algorithm used is unknown.
+      Don't know how I would find that out.
 
 GPLv3 License
 -------------
