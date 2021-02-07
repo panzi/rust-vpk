@@ -872,7 +872,7 @@ pub fn pack(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, options: Pac
         }
 
         if options.verbose {
-            println!("wrting missing sizes to head...");
+            println!("writing missing sizes to head...");
         }
 
         if let Err(error) = write_sizes(&mut writer, data_size, archive_md5_size, other_md5_size, signature_size) {
