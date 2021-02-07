@@ -52,7 +52,7 @@ TODO
 * [x] more stats for v2 packages
 * [x] read-only fuse filesystem
 * [x] read and evaluate md5 from VPK v2 files
-* [ ] BUG: random missing files when mounting!
+* [x] BUG: random missing files when mounting!
 * [ ] find out if the archive MD5 sum offsets for the `_dir.vpk` archive need
       to be adjusted like they do for file entries. Currently I assumed they
       don't, but I don't have a game that uses VPK v2 and embeds any data in the

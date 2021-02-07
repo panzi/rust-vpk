@@ -412,24 +412,24 @@ impl<'a> Filesystem for VPKFS {
         }
     }
 
-    fn readdir(&mut self, _req: &Request, ino: u64, _fh: u64, mut offset: i64, mut reply: ReplyDirectory) {
+    fn readdir(&mut self, _req: &Request, ino: u64, _fh: u64, offset: i64, mut reply: ReplyDirectory) {
         if let Some(inode_data) = self.inodes.get(&ino) {
             if let INodeData::Dir(dir) = &inode_data.data {
-                // XXX: What!?!? Is this meant like this or is this masking another bug!?
-                if offset > 0 {
-                    offset += 1;
-                }
-                let mut entry_offset = 0i64;
-                if offset <= entry_offset {
+                // Offset will be the last offset FUSE already got, or 0 at the start.
+                // Therefore I give the entries offsets starting with 1, so that the
+                // start is no special case. The offset 0 is just the last offset FUSE
+                // already got, which is not a real entry.
+                let mut entry_offset = 1;
+                if offset < entry_offset {
                     reply.add(ino,               entry_offset, FileType::Directory, ".");
                 }
                 entry_offset += 1;
-                if offset <= entry_offset {
+                if offset < entry_offset {
                     reply.add(inode_data.parent, entry_offset, FileType::Directory, "..");
                 }
                 entry_offset += 1;
                 for (name, child_inode) in &dir.children {
-                    if offset <= entry_offset {
+                    if offset < entry_offset {
                         let child = self.inodes.get(child_inode).unwrap();
                         if reply.add(child.inode, entry_offset, if child.is_dir() {
                             FileType::Directory
