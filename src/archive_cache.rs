@@ -121,7 +121,15 @@ impl ArchiveCache {
                 return Err(Error::io_with_path(error, self.archive_path(archive_index)));
             }
 
+            #[cfg(not(os_name = "windows"))]
             let mut buf = [0u8; BUFFER_SIZE];
+
+            // Windows gets a stack overflow otherwise:
+            #[cfg(os_name = "windows")]
+            let mut buf = Vec::with_capacity(BUFFER_SIZE);
+            #[cfg(os_name = "windows")]
+            buf.resize(BUFFER_SIZE, 0);
+
             let mut remain = file.size as usize;
             while remain >= BUFFER_SIZE {
                 if let Err(error) = reader.read_exact(&mut buf) {

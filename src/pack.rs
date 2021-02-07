@@ -75,7 +75,13 @@ impl Default for PackOptions {
 struct Gather {
     digest: crc32::Digest,
     max_inline_size: u16,
+
+    #[cfg(target_os = "windows")]
+    buf: Vec<u8>,
+
+    #[cfg(not(target_os = "windows"))]
     buf: [u8; BUFFER_SIZE],
+
     exts: HashSet<String>,
     verbose: bool,
     inline: bool,
@@ -108,10 +114,18 @@ impl Item<'_> {
 impl Gather {
     #[inline]
     fn new(max_inline_size: u16, verbose: bool) -> Self {
+        #[cfg(not(target_os = "windows"))]
+        let buf = [0; BUFFER_SIZE];
+
+        #[cfg(target_os = "windows")]
+        let mut buf = Vec::with_capacity(BUFFER_SIZE);
+        #[cfg(target_os = "windows")]
+        buf.resize(BUFFER_SIZE, 0);
+
         Gather {
             digest: crc32::Digest::new(crc32::IEEE),
             max_inline_size,
-            buf: [0; BUFFER_SIZE],
+            buf,
             exts: HashSet::new(),
             verbose,
             inline: false,
@@ -381,25 +395,24 @@ fn write_archive_md5s(dirwriter: &mut impl Write, archive_md5s: &Vec<ArchiveMd5>
     dirwriter.flush()
 }
 
-fn calculate_md5<R>(reader: &mut R, offset: u64, size: u64) -> std::io::Result<Md5>
+fn calculate_md5<R>(reader: &mut R, buf: &mut[u8], offset: u64, size: u64) -> std::io::Result<Md5>
 where R: Read, R: Seek {
 
     reader.seek(SeekFrom::Start(offset))?;
 
-    let mut buf = [0u8; BUFFER_SIZE];
     let mut remaining = size as usize;
     let mut hasher = md5::Context::new();
 
-    while remaining >= BUFFER_SIZE {
-        reader.read_exact(&mut buf)?;
+    while remaining >= buf.len() {
+        reader.read_exact(buf)?;
         hasher.consume(&buf);
-        remaining -= BUFFER_SIZE;
+        remaining -= buf.len();
     }
 
     if remaining > 0 {
         let buf = &mut buf[..remaining];
         reader.read_exact(buf)?;
-        hasher.consume(buf);
+        hasher.consume(&buf);
     }
 
     Ok(*hasher.compute())
@@ -845,7 +858,8 @@ pub fn pack(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, options: Pac
             println!("calculating index MD5 sum...");
         }
 
-        index_md5 = match calculate_md5(&mut dirreader, V2_HEADER_SIZE as u64, index_size as u64) {
+        let buf = &mut gather.buf[..];
+        index_md5 = match calculate_md5(&mut dirreader, buf, V2_HEADER_SIZE as u64, index_size as u64) {
             Ok(md5) => md5,
             Err(error) => return Err(Error::io_with_path(error, dirvpk_path)),
         };
@@ -854,7 +868,7 @@ pub fn pack(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, options: Pac
             println!("calculating MD5 sum section MD5 sum...");
         }
 
-        archive_md5s_md5 = match calculate_md5(&mut dirreader, data_end_offset, archive_md5_size as u64) {
+        archive_md5s_md5 = match calculate_md5(&mut dirreader, buf, data_end_offset, archive_md5_size as u64) {
             Ok(md5) => md5,
             Err(error) => return Err(Error::io_with_path(error, dirvpk_path)),
         };
@@ -887,7 +901,7 @@ pub fn pack(dirvpk_path: impl AsRef<Path>, indir: impl AsRef<Path>, options: Pac
             println!("calculating MD5 sum of everything above...");
         }
 
-        everything_md5 = match calculate_md5(&mut dirreader, 0, data_end_offset + archive_md5_size as u64 + 16 * 2) {
+        everything_md5 = match calculate_md5(&mut dirreader, buf, 0, data_end_offset + archive_md5_size as u64 + 16 * 2) {
             Ok(md5) => md5,
             Err(error) => return Err(Error::io_with_path(error, dirvpk_path)),
         };

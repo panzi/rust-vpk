@@ -52,7 +52,7 @@ impl Default for CheckOptions<'_> {
     }
 }
 
-fn check_range(arch: &mut std::fs::File, buf: &mut [u8; BUFFER_SIZE], offset: u64, size: u64, expected: &Md5, what: &str, verbose: bool) -> std::io::Result<bool> {
+fn check_range(arch: &mut std::fs::File, buf: &mut [u8], offset: u64, size: u64, expected: &Md5, what: &str, verbose: bool) -> std::io::Result<bool> {
     if verbose {
         print!("checking MD5 sum of {}... ", what);
         let _ = std::io::stdout().flush();
@@ -67,14 +67,14 @@ fn check_range(arch: &mut std::fs::File, buf: &mut [u8; BUFFER_SIZE], offset: u6
 
     let mut hasher = md5::Context::new();
     let mut remaining = size;
-    while remaining >= BUFFER_SIZE as u64 {
+    while remaining >= buf.len() as u64 {
         if let Err(error) = arch.read_exact(buf) {
             if verbose {
                 println!("FAILED");
             }
             return Err(error);
         }
-        remaining -= BUFFER_SIZE as u64;
+        remaining -= buf.len() as u64;
         hasher.consume(&buf);
     }
 
@@ -216,7 +216,14 @@ pub fn check(package: &Package, options: CheckOptions) -> Result<()> {
     let mut failed_md5_count = 0usize;
 
     if package.version > 1 {
-        let mut buf = [0u8; BUFFER_SIZE];
+        #[cfg(not(target_os = "windows"))]
+        let mut buf = [0; BUFFER_SIZE];
+
+        #[cfg(target_os = "windows")]
+        let mut buf = Vec::with_capacity(BUFFER_SIZE);
+        #[cfg(target_os = "windows")]
+        buf.resize(BUFFER_SIZE, 0);
+
         let arch = archs.get(DIR_INDEX)?;
 
         if let Some(md5) = package.index_md5() {

@@ -125,7 +125,7 @@ fn run() -> Result<()> {
     let default_max_inline_size_str = format!("{}", DEFAULT_MAX_INLINE_SIZE);
 
     let app = App::new("VPK - Valve Packages")
-        .version("1.0")
+        .version("1.0.0")
         .author("Mathias Panzenböck <grosser.meister.morti@gmx.net>");
 
     #[cfg(feature = "fuse")]
