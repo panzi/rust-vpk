@@ -274,9 +274,9 @@ fn run() -> Result<()> {
     #[cfg(feature = "fuse")]
     let app = app.subcommand(SubCommand::with_name("mount")
         .alias("m")
-        .about("Mount a VPK v1/v2 package as read-only filesystem.")
+        .about("Mount a VPK package as read-only filesystem.")
         .long_about(
-            "Mount a VPK v1/v2 package as read-only filesystem.\n\
+            "Mount a VPK package as read-only filesystem.\n\
              Use `fusermount -u <MOUNT-POINT>` to unmount again.")
         .arg(arg_allow_v0())
         .arg(Arg::with_name("foreground")
