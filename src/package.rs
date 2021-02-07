@@ -120,7 +120,10 @@ fn fix_dir_offsets(entries: &mut HashMap<String, Entry>, data_offset: u32) {
 }
 
 pub(crate) fn parse_path(path: impl AsRef<Path>) -> Result<(PathBuf, String)> {
-    let path = path.as_ref();
+    let path = match path.as_ref().canonicalize() {
+        Ok(path) => path,
+        Err(error) => return Err(Error::io_with_path(error, path)),
+    };
     let dirpath = if let Some(path) = path.parent() {
         path.to_owned()
     } else {
@@ -131,10 +134,10 @@ pub(crate) fn parse_path(path: impl AsRef<Path>) -> Result<(PathBuf, String)> {
             if let Some(name) = name.strip_suffix("_dir.vpk") {
                 name.to_owned()
             } else {
-                return Err(Error::other(format!("Filename does not end in \"_dir.vpk\": {:?}", name)).with_path(path));
+                return Err(Error::other(format!("filename does not end in \"_dir.vpk\": {:?}", name)).with_path(path));
             }
         } else {
-            return Err(Error::other(format!("Filename contains invalid unicode bytes: {:?}", name)).with_path(path));
+            return Err(Error::other(format!("filename contains invalid unicode bytes: {:?}", name)).with_path(path));
         }
     } else {
         return Err(Error::other("could not get file name of path").with_path(path));
