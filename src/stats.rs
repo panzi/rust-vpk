@@ -85,6 +85,8 @@ pub struct Stats<'a> {
     error_count: usize,
     sum_used_size:    u64,
     sum_archive_size: u64,
+    min_md5_chunk_size: u32,
+    max_md5_chunk_size: u32,
 }
 
 impl<'a> Stats<'a> {
@@ -100,6 +102,8 @@ impl<'a> Stats<'a> {
             error_count: 0,
             sum_used_size: 0,
             sum_archive_size: 0,
+            min_md5_chunk_size: 0,
+            max_md5_chunk_size: 0,
         }
     }
 
@@ -143,6 +147,15 @@ impl<'a> Stats<'a> {
         self.sum_archive_size
     }
 
+    pub fn min_md5_chunk_size(&self) -> u32 {
+        self.min_md5_chunk_size
+    }
+
+    pub fn max_md5_chunk_size(&self) -> u32 {
+        self.max_md5_chunk_size
+    }
+
+
     pub fn scan(package: &'a Package) -> Self {
         let mut stats = Self::new();
         stats.scan_entries(&package.entries);
@@ -166,6 +179,23 @@ impl<'a> Stats<'a> {
                     archstat.file_size = Some(file_size);
 
                     stats.sum_archive_size += file_size;
+                }
+            }
+        }
+
+        let mut first = true;
+        for chunk in &package.archive_md5s {
+            if first {
+                stats.min_md5_chunk_size = chunk.size;
+                stats.max_md5_chunk_size = chunk.size;
+                first = false;
+            } else {
+                if chunk.size < stats.min_md5_chunk_size {
+                    stats.min_md5_chunk_size = chunk.size;
+                }
+
+                if chunk.size > stats.max_md5_chunk_size {
+                    stats.max_md5_chunk_size = chunk.size;
                 }
             }
         }
@@ -282,7 +312,9 @@ pub fn stats(package: &Package, human_readable: bool) -> Result<()> {
         println!();
 
         print_headless_table(&[
-            vec!["Archive MD5 Count:", &format!("{}", package.archive_md5s.len())],
+            vec!["Archive MD5 Count:",          &format!("{}", package.archive_md5s.len())],
+            vec!["Min Archive MD5 Chunk Size:", &fmt_size(stats.min_md5_chunk_size as u64)],
+            vec!["Max Archive MD5 Chunk Size:", &fmt_size(stats.max_md5_chunk_size as u64)],
             vec!["Index MD5:",         if package.index_md5().is_some()        { "Yes" } else { "No" }, &format_md5(package.index_md5())],
             vec!["Archive MD5s MD5:",  if package.archive_md5s_md5().is_some() { "Yes" } else { "No" }, &format_md5(package.archive_md5s_md5())],
             vec!["Everything MD5:",    if package.everything_md5().is_some()   { "Yes" } else { "No" }, &format_md5(package.everything_md5())],
