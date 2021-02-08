@@ -2,6 +2,7 @@
 .*
 *~
 *.vpk
+*.zip
 perf.data
 perf.data.old
 /tmp
