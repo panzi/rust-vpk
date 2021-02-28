@@ -83,7 +83,7 @@ TODO
       don't, but I don't have a game that uses VPK v2 and embeds any data in the
       `_dir.vpk` file (outside the data directly inlined in the index) to
       verify. Don't know how I would find that out.
-* [ ] Read and evaluate signature from VPK v2 files? Algorithm used is unknown.
+* [ ] Read and evaluate signatures from VPK v2 files? Algorithm used is unknown.
       Don't know how I would find that out.
 
 GPLv3 License

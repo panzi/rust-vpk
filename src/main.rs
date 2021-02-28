@@ -33,7 +33,7 @@ pub mod mount;
 
 use clap::{Arg, App, SubCommand};
 
-use crate::list::{list, ListOptions};
+use crate::list::{list, ListOptions, ListStyle};
 use crate::stats::stats;
 use crate::check::{check, CheckOptions};
 use crate::unpack::{unpack, UnpackOptions};
@@ -160,6 +160,23 @@ fn run() -> Result<()> {
                      \n\
                      vpk list --sort=-full-size,name")
             )
+            .arg(Arg::with_name("only-names")
+                .long("only-names")
+                .short("n")
+                .takes_value(false)
+                .help(
+                    "Only print file names. \
+                     This is useful for use with xargs and the like."))
+            .arg(Arg::with_name("null")
+                .long("null")
+                .short("z")
+                .requires("only-names")
+                .takes_value(false)
+                .help(
+                    "Separate file names with NULL bytes. \
+                     This is useful for use with xargs --null, to be sure that \
+                     possible new lines in file names aren't interpreted as \
+                     file name separators."))
             .arg(arg_allow_v0())
             .arg(arg_human_readable())
             .arg(arg_package())
@@ -312,6 +329,8 @@ fn run() -> Result<()> {
 
             let allow_v0       = args.is_present("allow-v0");
             let human_readable = args.is_present("human-readable");
+            let null_separated = args.is_present("null");
+            let only_names     = args.is_present("only-names");
             let path           = args.value_of("package").unwrap();
             let filter         = Filter::new(args);
 
@@ -319,8 +338,12 @@ fn run() -> Result<()> {
 
             list(&package, ListOptions {
                 order,
-                human_readable,
-                filter: filter.as_ref()
+                style: if only_names {
+                    ListStyle::OnlyNames { null_separated }
+                } else {
+                    ListStyle::Table { human_readable }
+                },
+                filter: filter.as_ref(),
             })?;
         },
         ("check", Some(args)) => {
