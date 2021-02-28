@@ -14,8 +14,8 @@ fi
 mkdir -p "tmp/rust-vpk-$VERSION/linux-x86_64"
 mkdir -p "tmp/rust-vpk-$VERSION/windows-x86_64"
 
-cp target/x86_64-unknown-linux-gnu/release/vpk "tmp/rust-vpk-$VERSION/linux-x86_64"
-cp target/x86_64-pc-windows-gnu/release/vpk.exe "tmp/rust-vpk-$VERSION/windows-x86_64"
+cp target/x86_64-unknown-linux-gnu/release/rvpk "tmp/rust-vpk-$VERSION/linux-x86_64"
+cp target/x86_64-pc-windows-gnu/release/rvpk.exe "tmp/rust-vpk-$VERSION/windows-x86_64"
 
 cp -r README.md VPK.md Cargo.toml Cargo.lock .gitignore src release.sh "tmp/rust-vpk-$VERSION"
 
