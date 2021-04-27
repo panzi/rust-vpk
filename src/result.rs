@@ -217,4 +217,10 @@ impl From<std::str::Utf8Error> for Error {
     }
 }
 
+impl From<clap::Error> for crate::result::Error {
+    fn from(error: clap::Error) -> Self {
+        crate::result::Error::other(error.message)
+    }
+}
+
 pub type Result<T> = core::result::Result<T, Error>;

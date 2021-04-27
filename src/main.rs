@@ -49,12 +49,6 @@ use crate::util::parse_size;
 #[cfg(feature = "fuse")]
 use crate::mount::{mount, MountOptions};
 
-impl From<clap::Error> for crate::result::Error {
-    fn from(error: clap::Error) -> Self {
-        crate::result::Error::other(error.message)
-    }
-}
-
 pub enum Filter<'a> {
     None,
     Paths(Vec<&'a str>),
