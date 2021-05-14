@@ -86,6 +86,17 @@ TODO
 * [ ] Read and evaluate signatures from VPK v2 files? Algorithm used is unknown.
       Don't know how I would find that out.
 
+Related Projects
+----------------
+
+* [fezpak](https://github.com/panzi/fezpak): pack, unpack, list and mount FEZ .pak archives
+* [psypkg](https://github.com/panzi/psypkg): pack, unpack, list and mount Psychonauts .pkg archives
+* [bgebf](https://github.com/panzi/bgebf): unpack, list and mount Beyond Good and Evil .bf archives
+* [unvpk](https://github.com/panzi/unvpk): extract, list, check and mount Valve .vpk archives (C++ version of this project)
+* [u4pak](https://github.com/panzi/u4pak): list, check, unpack, pack and mount Unreal Engine 4 archives (Python)
+* [rust-u4pak](https://github.com/panzi/rust-u4pak): list, check, unpack, pack and mount Unreal Engine 4 archives (Rust)
+* [t2fbq](https://github.com/panzi/t2fbq): unpack, list and mount Trine 2 .fbq archives
+
 GPLv3 License
 -------------
 
