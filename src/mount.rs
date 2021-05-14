@@ -30,7 +30,7 @@ use crate::entry::{Entry, File};
 use crate::consts::DIR_INDEX;
 use crate::package::Package;
 use crate::result::{Result, Error};
-use crate::util::{archive_path};
+use crate::util::archive_path;
 
 struct Dir {
     children: HashMap<String, u64>,
@@ -289,12 +289,12 @@ const FILE_XATTRS: &[u8] =
       user.vpkfs.archive_index\0\
       user.vpkfs.offset\0";
 
-impl<'a> Filesystem for VPKFS {
+impl Filesystem for VPKFS {
     fn lookup(&mut self, _req: &Request, parent: u64, name: &OsStr, reply: ReplyEntry) {
         if let Some(mut inode_data) = self.inodes.get(&parent) {
-            if name == OsStr::new(".") {
+            if "." == name {
                 // done
-            } else if name == OsStr::new("..") {
+            } else if ".." == name {
                 inode_data = if let Some(inode_data) = self.inodes.get(&inode_data.parent) {
                     inode_data
                 } else {
@@ -548,6 +548,7 @@ impl std::convert::From<DaemonizeError> for Error {
     }
 }
 
+#[derive(Debug)]
 pub struct MountOptions {
     pub foreground: bool,
     pub debug: bool,
